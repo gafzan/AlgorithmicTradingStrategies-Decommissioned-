@@ -44,7 +44,7 @@ def string_is_number(s: str) -> bool:
 
 
 def capital_letter_no_blanks(input_: {str, list}) -> {str, list}:
-    """Assumes s is a string. Returns a string with capital letters and blanks replaced by '_'."""
+    """Assumes input_ is a string or list. Returns a string with capital letters and blanks replaced by '_'."""
     if isinstance(input_, str):
         return input_.upper().replace(' ', '_')
     elif isinstance(input_, list):  # if list, adjust all elements recursively
