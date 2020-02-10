@@ -172,6 +172,7 @@ class FinancialDatabase(_StaticFinancialDatabase):
             underlying_attribute_value = underlying_attribute_dict[underlying_attribute]  # e.g. 'ENERGY' if sector
             if not isinstance(underlying_attribute_value, list):
                 underlying_attribute_value = [underlying_attribute_value]  # string -> [string]
+            underlying_attribute_value = capital_letter_no_blanks(underlying_attribute_value)
             query_ticker = query_ticker.filter(underlying_attribute.in_(underlying_attribute_value))
         query_ticker.order_by(Underlying.ticker)  # sort
         ticker_list = [tup[0] for tup in query_ticker]  # extract the ticker string from the result
