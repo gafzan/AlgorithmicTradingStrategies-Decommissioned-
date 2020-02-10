@@ -174,7 +174,7 @@ class FinancialDatabase(_StaticFinancialDatabase):
                 underlying_attribute_value = [underlying_attribute_value]  # string -> [string]
             underlying_attribute_value = capital_letter_no_blanks(underlying_attribute_value)
             query_ticker = query_ticker.filter(underlying_attribute.in_(underlying_attribute_value))
-        query_ticker.order_by(Underlying.ticker)  # sort
+        query_ticker.order_by(Underlying.ticker)
         ticker_list = [tup[0] for tup in query_ticker]  # extract the ticker string from the result
         logger.info("{} ticker(s) selected.".format(len(ticker_list)))
         return ticker_list
