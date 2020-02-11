@@ -16,8 +16,13 @@ class _Weight:
         self.signal_df = signal_df
 
     def get_weights(self):
+        if self.signal_df is None:
+            raise ValueError('signal_df not yet assigned.')
+        return self._calculate_weight()
+
+    def _calculate_weight(self):
         # to be overridden
-        raise ValueError('Instance of a _Weight object should not get weights.')
+        raise ValueError('Instance of a _Weight object should not call calculate_weight.')
 
     @property
     def signal_df(self):
@@ -43,11 +48,8 @@ class EqualWeight(_Weight):
         self.total_long_allocation = total_long_allocation
         self.total_short_allocation = total_short_allocation
 
-    def get_weights(self):
-        if self.signal_df is None:
-            raise ValueError('signal_df not yet assigned.')
-        else:
-            return self._get_equal_weights(self.signal_df, self.total_long_allocation, self.total_short_allocation)
+    def _calculate_weight(self):
+        return self._get_equal_weights(self.signal_df, self.total_long_allocation, self.total_short_allocation)
 
     @staticmethod
     def _get_equal_weights(signal_df: pd.DataFrame, total_long_allocation: float = 1.0,
@@ -81,11 +83,8 @@ class EqualWeight(_Weight):
 class StaticWeight(_Weight):
     """Class definition of StaticWeight"""
 
-    def get_weights(self):
-        if self.signal_df is None:
-            raise ValueError('signal_df not yet assigned.')
-        else:
-            return self._get_static_weights(self.signal_df)
+    def _calculate_weight(self):
+        return self._get_static_weights(self.signal_df)
 
     # Overriding the setter property in the parent class because of different constraint on signal DataFrame.
     @_Weight.signal_df.setter
@@ -130,6 +129,14 @@ class _ProportionalValueWeight(_Weight):
         self.measurement_lag = measurement_lag
         self._financial_database_handler = FinancialDatabase(my_database_name, database_echo=False)
 
+    def _calculate_weight(self):
+        values_df = self._get_values_for_weight_calculation_df()
+        return self._get_proportional_weights(self.signal_df, values_df, self.inversely)
+
+    def _get_values_for_weight_calculation_df(self) -> pd.DataFrame:
+        raise ValueError('_get_values_for_weight_calculation_df should not be called by an instance of a '
+                         '_ProportionalValueWeight object.')
+
     def _get_tickers_start_end_date(self):
         tickers = list(self.signal_df.columns)
         start_date = self.signal_df.index[0]
@@ -173,20 +180,24 @@ class _ProportionalValueWeight(_Weight):
 class VolatilityWeight(_ProportionalValueWeight):
     """Class definition of VolatilityWeight"""
 
-    def __init__(self, volatility_lag: int, inversely: bool = True, signal_df: pd.DataFrame = None):
+    def __init__(self, volatility_lag: int, inversely: bool = True, signal_df: pd.DataFrame = None,
+                 total_return: bool = False):
         super().__init__(signal_df, inversely, volatility_lag)
         self.volatility_lag = volatility_lag
+        self.total_return = total_return
 
-    def get_weights(self):
-        if self.signal_df is None:
-            raise ValueError('signal_df not yet assigned.')
+    def _get_values_for_weight_calculation_df(self):
         tickers, start_date, end_date = self._get_tickers_start_end_date()
-        start_date -= timedelta(days=self.volatility_lag + 50)
-        price_df = self._financial_database_handler.get_close_price_df(tickers, start_date, end_date)
+        start_date -= timedelta(days=self.volatility_lag + 20)  # add some extra dates
+        if self.total_return:
+            price_df = self._financial_database_handler.get_total_return_df(tickers, start_date, end_date)
+        else:
+            price_df = self._financial_database_handler.get_close_price_df(tickers, start_date, end_date)
+        # calculate the volatility and match the index with the signal DataFrame
         volatility_df = select_rows_from_dataframe_based_on_sub_calendar(
             realized_volatility(price_df, self.volatility_lag),
             self.signal_df.index)
-        return self._get_proportional_weights(self.signal_df, volatility_df, self.inversely)
+        return volatility_df
 
     def __repr__(self):
         return "<VolatilityWeight(inversely = {}, measurement lag = {} days)>".format(self.inversely, self.volatility_lag)
