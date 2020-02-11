@@ -4,7 +4,7 @@ from financial_database import FinancialDatabase
 from config_database import my_database_name
 from dataframe_tools import dataframe_has_same_index_and_column_names, check_if_values_in_dataframe_are_allowed, \
     select_rows_from_dataframe_based_on_sub_calendar
-from finance_tools import realized_volatility, rolling_average
+from finance_tools import realized_volatility
 from datetime import timedelta
 
 
