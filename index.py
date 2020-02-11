@@ -5,7 +5,7 @@ import numpy as np
 from datetime import datetime, timedelta, date
 from dataframe_tools import select_rows_from_dataframe_based_on_sub_calendar
 from finance_tools import index_calculation, rolling_average
-from index_signal import is_signal_subclass_instance, is_price_based_signal_subclass_instance, SimpleMovingAverageCross
+from index_signal_OLD import is_signal_subclass_instance, is_price_based_signal_subclass_instance, SimpleMovingAverageCross
 from index_weight import is_weight_subclass_instance, EqualWeight
 import logging
 
