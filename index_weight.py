@@ -106,7 +106,8 @@ class StaticWeight(_Weight):
             ask_user = True
             while ask_user:
                 try:
-                    weight_from_user = float(input(f'Enter weight(%) for {ticker}: '))
+                    weight_from_user = float(input(f'Enter weight(%) for {ticker} '
+                                                   f'({counter + 1}/{len(list(signal_df))}): '))
                     weight_list.append(weight_from_user)
                 except ValueError:
                     pass
