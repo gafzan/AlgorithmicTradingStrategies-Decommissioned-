@@ -6,6 +6,7 @@ from financial_database import FinancialDatabase
 
 # my own modules
 from dataframe_tools import select_rows_from_dataframe_based_on_sub_calendar, check_if_values_in_dataframe_are_allowed
+from finance_tools import rolling_average
 
 
 class Signal:
@@ -155,6 +156,23 @@ class SimpleMovingAverageCrossSignal(_PriceBasedSignal):
         self.leading_lagging_window = leading_lagging_window
         self._bday_before_start_date_buffer = self._lagging_window + 10
 
+    def _calculate_signal(self, eligibility_df: pd.DataFrame):
+        """Calculate the SMA crossover signal. Return a DataFrame.
+        Given that eligibility_df shows 1, if SMA(lead) > SMA(lag) => 1 (bullish), else -1 (bearish) else 0."""
+        # Calculate the SMA DataFrames and the signal before removal of NaN and eligibility constraints.
+        leading_sma_df = rolling_average(self._underlying_price_df, self._leading_window)
+        lagging_sma_df = rolling_average(self._underlying_price_df, self._lagging_window)
+        signal_array = np.where(leading_sma_df > lagging_sma_df, 1, -1)
+        sma_is_not_nan = ~(leading_sma_df + lagging_sma_df).isnull() * 1
+
+        # add 0 (neutral) if any SMA is NaN and apply the constraints
+        signal_df = signal_array * sma_is_not_nan
+
+        # apply the eligibility filter
+        signal_df = select_rows_from_dataframe_based_on_sub_calendar(signal_df, self.signal_observation_calendar)
+        signal_df *= self.eligibility_df
+        return signal_df
+
     # ------------------------------------------------------------------------------------------------------------------
     # getter, setter and static methods
     @property
@@ -173,10 +191,10 @@ class SimpleMovingAverageCrossSignal(_PriceBasedSignal):
 
 def main():
     tickers = ["SAND.ST", "HM-B.ST", "AAK.ST"]
-    dates = pd.date_range(start='2010', periods=5)
-    main_signal = SimpleMovingAverageCrossSignal((3, 50), tickers, dates)
-    print(main_signal.get_signal_df())
-    print(main_signal.eligibility_df)
+    dates = pd.date_range(start='2010', periods=50)
+    main_signal = SimpleMovingAverageCrossSignal((1, 10), tickers, dates)
+    sma = main_signal.get_signal_df()
+    print(sma)
 
 
 if __name__ == '__main__':
