@@ -163,7 +163,7 @@ class SimpleMovingAverageCrossSignal(_PriceBasedSignal):
         leading_sma_df = rolling_average(self._underlying_price_df, self._leading_window)
         lagging_sma_df = rolling_average(self._underlying_price_df, self._lagging_window)
         signal_array = np.where(leading_sma_df > lagging_sma_df, 1, -1)
-        sma_is_not_nan = ~(leading_sma_df + lagging_sma_df).isnull() * 1
+        sma_is_not_nan = ~(leading_sma_df + lagging_sma_df).isnull()
 
         # add 0 (neutral) if any SMA is NaN and apply the constraints
         signal_df = signal_array * sma_is_not_nan
