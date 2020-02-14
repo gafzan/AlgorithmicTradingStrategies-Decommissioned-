@@ -4,6 +4,7 @@ import logging
 
 # my own modules
 from financial_database import FinancialDatabase
+from index_signal import Signal
 
 # Logger
 logger = logging.getLogger(__name__)
@@ -64,9 +65,22 @@ class Index(Basket):
         self.rebalancing_calendar = rebalancing_calendar
         self.index_fee = index_fee
         self.transaction_cost = transaction_cost
+        self._signal = None
+        self._weight = None
 
     # ------------------------------------------------------------------------------------------------------------------
     # getter and setter methods
+    @property
+    def signal(self):
+        return self._signal
+
+    @signal.setter
+    def signal(self, signal):
+        if issubclass(signal, Signal) or isinstance(signal, Signal):
+            self._signal = signal
+        else:
+            raise ValueError('Needs to be an object from Signal class or a subclass of the Signal class')
+
     @property
     def rebalancing_calendar(self):
         return self._rebalancing_calendar
@@ -104,7 +118,8 @@ def main():
     tickers = ["SAND.ST", "HM-B.ST", "AAK.ST"]
     rebalance_cal = pd.date_range(start='2010', periods=5, freq='M')
     index_main = Index(tickers, rebalance_cal, total_return=True, dividend_tax=0.01, index_fee=-0.03)
-    print(index_main.basket_prices())
+    print(index_main.signal)
+
 
 
 if __name__ == '__main__':
