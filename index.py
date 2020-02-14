@@ -1,6 +1,8 @@
-from financial_database import FinancialDatabase
+import pandas as pd
 from datetime import date, datetime
 
+# my own modules
+from financial_database import FinancialDatabase
 
 class Basket:
     """Class definition of Basket"""
@@ -40,6 +42,12 @@ class Basket:
             .format(len(self.tickers), currency=self.currency if self.currency else 'local',
                     total_return='total return' if self.total_return else 'price return',
                     dividend_tax=' with ' + str(round(self.dividend_tax*100, 2)) + '% dividend tax' if self.dividend_tax and self.total_return else '')
+
+
+class Index(Basket):
+    """Class definition of Index. Subclass of Basket class."""
+
+    def __init__(self, tickers: {str, list}, index_calendar: pd.DatetimeIndex, ):
 
 
 def main():
