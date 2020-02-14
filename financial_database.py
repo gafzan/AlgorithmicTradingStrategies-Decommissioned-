@@ -14,7 +14,7 @@ from dataframe_tools import select_rows_from_dataframe_based_on_sub_calendar
 
 # Logger
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s : %(module)s : %(funcName)s : %(message)s')
 stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
