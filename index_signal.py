@@ -1,6 +1,5 @@
 import pandas as pd
 from pandas.tseries.offsets import BDay
-import pandas.core.common as com
 import numpy as np
 from financial_database import FinancialDatabase
 
