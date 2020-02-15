@@ -320,6 +320,9 @@ class FinancialDatabase(_StaticFinancialDatabase):
         # handle tickers that has no data
         result_pivoted_df = self._handle_missing_data(tickers, result_pivoted_df)
 
+        # if all columns are nan, remove the entire row
+        result_pivoted_df.dropna(inplace=True, how='all')
+
         # currency convert if applicable
         if isinstance(currency, str) and table != Volume:
             return self._currency_convert_df(result_pivoted_df, currency)
