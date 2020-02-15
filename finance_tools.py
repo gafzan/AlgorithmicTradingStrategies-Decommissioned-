@@ -196,19 +196,16 @@ def monthly_return_table(price_df: pd.DataFrame, include_first_monthly_return: b
         return monthly_return_table_df_list
 
 
-def return_and_risk_analysis(underlying_price_df: pd.DataFrame, has_benchmark=False, create_plots=False,
-                             print_results=True, excel_path: str = None, excel_workbook_name: str = 'Back test result',
-                             start_date=None, end_date=None) -> None:
-    """Assumes that underlying_price_df is a DataFrame with prices in each column and dates as index, has_benchmark and
-    print_result are both boolean and excel_path and excel_workbook are strings. Calculates annual returns,
-    annual volatility drawdown and return distributions. If has_benchmark is True (only works if there are two coumns)
-    function will return active return and information ratio. Results can be saved and plotted."""
+def return_and_risk_analysis(underlying_price_df: pd.DataFrame, has_benchmark=False, print_results=True,
+                             start_date=None, end_date=None) -> dict:
+    """Assumes that underlying_price_df is a DataFrame with prices in each column and dates as index, has_benchmark is
+    boolean. Calculates annual returns, annual volatility drawdown and return distributions.
+    If has_benchmark is True (only works if there are two columns) function will return active return and information
+    ratio. Returns a dictionary with names (string) as keys and DataFrames as values. This can later easely be saved in
+    an Excel workbook."""
     if has_benchmark and len(underlying_price_df.columns) != 2:
         raise ValueError("Price DataFrame needs to have only two columns: 1st is your strategy and the 2nd is your "
                          "benchmark. Currently the DataFrame has {} column(s).".format(len(underlying_price_df.columns)))
-    if create_plots:
-        cmap = cm.get_cmap('Dark2')
-        plt.rcParams['axes.facecolor'] = 'ivory'
     underlying_price_df.dropna(inplace=True)  # drops each row if there exists a NaN in either column
     if start_date:
         underlying_price_df = underlying_price_df[start_date:]
@@ -235,6 +232,11 @@ def return_and_risk_analysis(underlying_price_df: pd.DataFrame, has_benchmark=Fa
     risk_return_table_df = pd.concat([avg_1y_return_s, avg_1y_volatility_s, sharpe_ratio_s, max_drawdown_s],
                                      axis=1).transpose()
 
+    # setup a dictionary with sheet names as keys and DataFrames as values
+    sheet_name_df_dict = {'Performance': performance_df, 'Risk and return': risk_return_table_df,
+                          'Rolling 1Y return': rolling_1y_return_df, 'Rolling 1Y volatility': rolling_1y_volatility_df,
+                          'Rolling 1Y drawdown': rolling_1y_drawdown_df}
+
     if has_benchmark:
         # calculate the rolling active return and information ratio
         rolling_1y_active_return_s = rolling_1y_return_df.iloc[:, 0] - rolling_1y_return_df.iloc[:, 1]
@@ -248,35 +250,25 @@ def return_and_risk_analysis(underlying_price_df: pd.DataFrame, has_benchmark=Fa
         risk_return_table_df = pd.concat([risk_return_table_df, avg_1y_active_return_df, avg_1y_information_ratio_df])
         risk_return_table_df.index = ['Average 1Y return', 'Average 1Y volatility', 'Sharpe ratio', 'Maximum drawdown',
                                       'Average 1Y active return', 'Average information ratio']
-        if create_plots:
-            rolling_1y_active_return_s.plot(grid=True, title='1Y active return', colormap=cmap)
+        # include active returns and information ratio DataFrames in the dictionary
+        sheet_name_df_dict.update \
+                (
+                    {'Rolling 1Y active returns': pd.DataFrame({'1Y Active return': rolling_1y_active_return_s}),
+                        'Rolling 1Y information ratio': pd.DataFrame({'Information ratio': rolling_1y_information_ratio_s})
+                     }
+                )
     else:
         risk_return_table_df.index = ['Average 1Y return', 'Average 1Y volatility', 'Sharpe ratio', 'Maximum drawdown']
 
-    if excel_path:
-        # setup a dictionary with sheet names as keys and DataFrames as values
-        sheet_name_df_dict = {'Index performance': performance_df, 'Risk and return': risk_return_table_df,
-                              'Rolling 1Y return': rolling_1y_return_df, 'Rolling 1Y volatility': rolling_1y_volatility_df,
-                              'Rolling 1Y drawdown': rolling_1y_drawdown_df}
-        monthly_and_yearly_return_table = monthly_return_table(performance_df)
-        if not isinstance(monthly_and_yearly_return_table, list):
-            monthly_and_yearly_return_table = [monthly_and_yearly_return_table]
-        for i in range(len(performance_df.columns)):
-            sheet_name_df_dict.update\
-                (
-                    {'Return table (' + list(performance_df)[i] + ')': monthly_and_yearly_return_table[i]}
-                )
-        if has_benchmark:
-            # include active returns and information ratio DataFrames in the dictionary
-            sheet_name_df_dict.update\
-                (
-                    {'Rolling 1Y active returns': pd.DataFrame({'1Y Active return': rolling_1y_active_return_s}),
-                     'Rolling 1Y information ratio': pd.DataFrame({'Information ratio': rolling_1y_information_ratio_s})
-                     }
-                )
-        # save all the DataFrames to excel
-        save_df(df_list=list(sheet_name_df_dict.values()), workbook_name=excel_workbook_name + ' - ' + str(date.today())[:10],
-                folder_path=excel_path, sheet_name_list=list(sheet_name_df_dict.keys()))
+    # add the monthly return tables
+    monthly_and_yearly_return_table = monthly_return_table(performance_df)
+    if not isinstance(monthly_and_yearly_return_table, list):
+        monthly_and_yearly_return_table = [monthly_and_yearly_return_table]
+    for i in range(len(performance_df.columns)):
+        sheet_name_df_dict.update\
+            (
+                {'Return table (' + list(performance_df)[i] + ')': monthly_and_yearly_return_table[i]}
+            )
 
     if print_results:
         print('\n' + 100 * '-' + '\nRisk and return')
@@ -291,33 +283,39 @@ def return_and_risk_analysis(underlying_price_df: pd.DataFrame, has_benchmark=Fa
         end_date_str = str(underlying_price_df.index[-1])[:10]
         print('Source: Yahoo Finance and Huggorm Investment AB. Based on data between {} and {}. Past performance is '
               'not a reliable indicator of future returns.'.format(start_date_str, end_date_str))
-    if create_plots:
-        start_date_str = str(underlying_price_df.index[0])[:10]
-        end_date_str = str(underlying_price_df.index[-1])[:10]
-        rolling_1y_return_df.plot(kind='hist', grid=True, subplots=True, sharex=True, sharey=True,
-                                  title='1Y return distribution\n({} - {})'.format(start_date_str, end_date_str),
-                                  colormap=cmap, bins=100)
-        rolling_1y_drawdown_df.plot(grid=True, title='1Y drawdown', colormap=cmap)
-        rolling_1y_volatility_df.plot(grid=True, title='1Y volatility', colormap=cmap)
-        rolling_1y_return_df.plot(grid=True, title='1Y return', colormap=cmap)
-        performance_df.plot(grid=True, title='Performance', colormap=cmap)
-        plt.show()
-    return
+    return sheet_name_df_dict
+
+
+def plot_results(df_dict: {dict}):
+    """Assumes that df_dict is a dictionary with strings as keys and DataFrames as values. This dictionary is assumed to
+    have been generated using the return_and_risk_analysis function. Plots a selection of the DataFrames."""
+    cmap = cm.get_cmap('Dark2')  # background color
+    plt.rcParams['axes.facecolor'] = 'ivory'  # coloring scheme
+    try:
+        # this DataFrame is only available if you have chosen to calculate results compared with a benchmark
+        df_dict['Rolling 1Y active returns'].plot(grid=True, title='1Y active return', colormap=cmap)
+    except KeyError:
+        pass
+    performance_df = df_dict['Performance']
+    df_dict['Rolling 1Y return'].plot(kind='hist', grid=True, subplots=True, sharex=True, sharey=True,
+                                      title='1Y return distribution\n({} - {})'.format(str(performance_df.index[0])[:10],
+                                                                                       str(performance_df.index[-1])[:10]),
+                                      colormap=cmap, bins=100)
+    df_dict['Rolling 1Y drawdown'].plot(grid=True, title='1Y drawdown', colormap=cmap)
+    df_dict['Rolling 1Y volatility'].plot(grid=True, title='1Y volatility', colormap=cmap)
+    df_dict['Rolling 1Y return'].plot(grid=True, title='1Y return', colormap=cmap)
+    performance_df.plot(grid=True, title='Performance', colormap=cmap)
+    plt.show()
 
 
 def main():
     folder_path = r'C:\Users\gafza\PycharmProjects\AlgorithmicTradingStrategies\excel_data'
     close_df = load_df('4 stocks on OMX', folder_path, sheet_name='Sheet1')
-    return_and_risk_analysis(close_df, create_plots=True, excel_path=folder_path)
-    # m_return_tables = monthly_return_table(close_df)
-    # counter = 0
-    # for ticker in list(close_df):
-    #     print('-' * 10 + '\n{}'.format(ticker))
-    #     try:
-    #         print(m_return_tables[counter])
-    #     except KeyError:
-    #         print(m_return_tables)
-    #     counter += 1
+    result_dict = return_and_risk_analysis(close_df)
+    save_df(df_list=list(result_dict.values()),
+            workbook_name='performance data test' + ' - ' + str(date.today())[:10],
+            folder_path=folder_path, sheet_name_list=list(result_dict.keys()))
+    plot_results(result_dict)
 
 
 if __name__ == '__main__':
