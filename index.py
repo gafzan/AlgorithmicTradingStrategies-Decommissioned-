@@ -5,6 +5,7 @@ import logging
 # my own modules
 from financial_database import FinancialDatabase
 from index_signal import Signal
+from index_weight import _Weight
 
 # Logger
 logger = logging.getLogger(__name__)
@@ -68,6 +69,22 @@ class Index(Basket):
         self._signal = None
         self._weight = None
 
+    def _check_before_back_test(self):
+        if self.signal is None:
+            self.signal = Signal(ticker_list=self.tickers)  # default signal
+
+    def get_back_test(self, start_date: {date, datetime}, end_date: {date, datetime}):
+        self._check_before_back_test()
+
+        # calculate the signal
+        signal_df = self.signal.get_signal_df()
+
+        # calculate the weights
+        self.weight.signal_df = signal_df
+        weight_df = self.weight.get_weights()
+
+        # calculate the index
+
     # ------------------------------------------------------------------------------------------------------------------
     # getter and setter methods
     @property
@@ -79,7 +96,18 @@ class Index(Basket):
         if issubclass(signal, Signal) or isinstance(signal, Signal):
             self._signal = signal
         else:
-            raise ValueError('Needs to be an object from Signal class or a subclass of the Signal class')
+            raise ValueError('Needs to be an object from Signal class or a subclass of class Signal.')
+
+    @property
+    def weight(self):
+        return self._weight
+
+    @weight.setter
+    def weight(self, weight):
+        if issubclass(weight, _Weight):
+            self._weight = weight
+        else:
+            raise ValueError('Needs to be an object from a subclass of class _Weight.')
 
     @property
     def rebalancing_calendar(self):
