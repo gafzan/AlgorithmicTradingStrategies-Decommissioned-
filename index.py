@@ -1,4 +1,5 @@
 import pandas as pd
+from pandas.tseries.offsets import BDay
 from datetime import date, datetime
 import logging
 import matplotlib.pyplot as plt
@@ -8,6 +9,7 @@ from financial_database import FinancialDatabase
 from index_signal import Signal
 from index_weight import _Weight, EqualWeight
 from finance_tools import index_calculation
+from dataframe_tools import select_rows_from_dataframe_based_on_sub_calendar
 
 # Logger
 logger = logging.getLogger(__name__)
@@ -78,30 +80,34 @@ class Index(Basket):
         if self.weight is None:
             raise ValueError('No weight assigned.')
 
-    def get_back_test(self, start_date: {date, datetime}=None, end_date: {date, datetime}=None,
-                      return_index_only: bool = True):
-        back_test = self._get_back_test_or_weight_df(True, start_date, end_date)
+    def get_back_test(self, end_date: {date, datetime}=None, return_index_only: bool = True):
+        back_test = self._get_back_test_or_weight_df(True, end_date)
         if return_index_only:
             return back_test[['index']]
         return back_test
 
-    def get_weight_df(self, start_date: {date, datetime}=None, end_date: {date, datetime}=None):
-        return self._get_back_test_or_weight_df(True, start_date, end_date)
+    def get_weight_df(self, end_date: {date, datetime}=None):
+        return self._get_back_test_or_weight_df(True, end_date)
 
-    def _get_back_test_or_weight_df(self, get_back_test: bool, start_date: {date, datetime}=None, end_date: {date, datetime}=None):
-        # TODO handle when dates are incorrect
+    def _get_back_test_or_weight_df(self, get_back_test: bool, end_date: {date, datetime}=None):
+        # handle the start and end date
+        start_date = self.rebalancing_calendar[0] - BDay(5)
+        if end_date is not None and end_date <= date(self.rebalancing_calendar[0].isoformat()):
+            raise ValueError("end_date is not allowed to be before the rebalancing calendar.")
+
+        # retrieve the underlying price to be used in the index
         underlying_price_df = self.basket_prices(start_date, end_date)
         self._check_before_back_test()
 
-        # calculate the signal
+        # calculate the signal and if there is no observation calendar assigned to the signal assign a default one
         if self.signal.signal_observation_calendar is None:
-            # assign an observation calendar if applicable
             self.signal.signal_observation_calendar = underlying_price_df.index
         signal_df = self.signal.get_signal_df()
 
         # calculate the weights
         self.weight.signal_df = signal_df
         weight_df = self.weight.get_weights()
+        weight_df = select_rows_from_dataframe_based_on_sub_calendar(weight_df, self.rebalancing_calendar)
 
         if get_back_test:
             return index_calculation(underlying_price_df, weight_df, self.transaction_cost, self.index_fee,
@@ -179,12 +185,13 @@ class Index(Basket):
 
 def main():
     tickers = ["SAND.ST", "HM-B.ST", "AAK.ST"]
-    rebalance_cal = pd.date_range(start='2010', periods=5, freq='M')
+    rebalance_cal = pd.date_range(start='2010', periods=10, freq='M')
     index_main = Index(tickers, rebalance_cal, total_return=True, dividend_tax=0.01, index_fee=-0.03)
     index_main.weight = EqualWeight()
-    back_test = index_main.get_back_test()
-    back_test.plot()
-    plt.show()
+    back_test = index_main.get_back_test(end_date=date(2010, 6, 1))
+    print(back_test)
+    # back_test.plot()
+    # plt.show()
 
 
 if __name__ == '__main__':
