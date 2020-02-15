@@ -1,5 +1,6 @@
 import pandas as pd
 from pandas.tseries.offsets import BDay
+import numpy as np
 from datetime import date, datetime
 import logging
 import matplotlib.pyplot as plt
@@ -92,7 +93,7 @@ class Index(Basket):
     def _get_back_test_or_weight_df(self, get_back_test: bool, end_date: {date, datetime}=None):
         # handle the start and end date
         start_date = self.rebalancing_calendar[0] - BDay(5)
-        if end_date is not None and end_date <= date(self.rebalancing_calendar[0].isoformat()):
+        if end_date is not None and np.datetime64(end_date) <= np.datetime64(self.rebalancing_calendar[0]):
             raise ValueError("end_date is not allowed to be before the rebalancing calendar.")
 
         # retrieve the underlying price to be used in the index
@@ -188,8 +189,13 @@ def main():
     rebalance_cal = pd.date_range(start='2010', periods=10, freq='M')
     index_main = Index(tickers, rebalance_cal, total_return=True, dividend_tax=0.01, index_fee=-0.03)
     index_main.weight = EqualWeight()
-    back_test = index_main.get_back_test(end_date=date(2010, 6, 1))
+    end_date = date(2010, 6, 3)
+    back_test = index_main.get_back_test(end_date=end_date)
     print(back_test)
+
+    from financial_database import FinancialDatabase
+    from config_database import my_database_name
+    print(FinancialDatabase(my_database_name, False).get_close_price_df(tickers, rebalance_cal[0], end_date))
     # back_test.plot()
     # plt.show()
 

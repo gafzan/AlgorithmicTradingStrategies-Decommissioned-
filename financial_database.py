@@ -278,6 +278,9 @@ class FinancialDatabase(_StaticFinancialDatabase):
         logger.debug('Get {} data for {} ticker(s)'.format(table.__tablename__, len(tickers))
                      + logger_time_interval_message(start_date, end_date))
 
+        # need to add an extra day otherwise the 'between' function below does not capture the end date
+        end_date = end_date + timedelta(1)
+
         # dictionary that holds the name of the value column
         value_column_name_dict = {OpenPrice: 'open_quote', HighPrice: 'high_quote', LowPrice: 'low_quote',
                                   ClosePrice: 'close_quote', Volume: 'volume_quote', Dividend: 'dividend_amount'}
