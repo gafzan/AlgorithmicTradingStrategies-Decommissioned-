@@ -17,18 +17,20 @@ class Signal:
     def __init__(self, ticker_list: list = None, signal_observation_calendar: pd.DatetimeIndex = None,
                  eligibility_df: pd.DataFrame = None):
         # either assign eligibility_df or ticker_list and signal_observation_calendar
-        if eligibility_df is None and com.count_not_none(ticker_list, signal_observation_calendar) == 2:
+        if not eligibility_df and ticker_list:
             self._ticker_list = ticker_list
             self._signal_observation_calendar = signal_observation_calendar
-        elif eligibility_df is not None and com.count_not_none(ticker_list, signal_observation_calendar) == 0:
+        elif eligibility_df and not (ticker_list or signal_observation_calendar):
             self._ticker_list = list(eligibility_df)
             self._signal_observation_calendar = eligibility_df.index
         else:
-            raise ValueError("Need to assign ticker_list and signal_observation_calendar or only eligibility_df.")
+            raise ValueError("Need to assign ticker_list or only eligibility_df.")
         self._eligibility_df = eligibility_df
         self._financial_database_handler = FinancialDatabase(self.financial_database_name, False)
 
     def get_signal_df(self) -> pd.DataFrame:
+        if self.signal_observation_calendar is None:
+            raise RuntimeError('Need to assign signal_observation_calendar before calculating signal')
         # first do the eligibility filter, then calculate the signal
         eligibility_df = self._get_eligibility_df()
         return self._calculate_signal(eligibility_df)
@@ -80,13 +82,23 @@ class Signal:
     @eligibility_df.setter
     def eligibility_df(self, eligibility_df: pd.DataFrame):
         # check if eligibility_df has same tickers and observation dates and values are only 0s and 1s
-        if eligibility_df is None \
-                or (list(eligibility_df) == self.ticker_list
-                    and all(eligibility_df.index == self.signal_observation_calendar)
-                    and check_if_values_in_dataframe_are_allowed(eligibility_df, 0, 1)):
-            self._eligibility_df = eligibility_df
+        if eligibility_df is not None:
+            # same column headers and allowed values are 1s and 0s
+            # if signal_observation_calendar has already been assigned it needs to equal the index of eligibility_df
+            change_eligibility_df = list(eligibility_df) == self.ticker_list \
+                                    and check_if_values_in_dataframe_are_allowed(eligibility_df, 0, 1) \
+                                    and all(eligibility_df.index == self.signal_observation_calendar) \
+                                    if self.signal_observation_calendar is not None\
+                                    else self.ticker_list \
+                                    and check_if_values_in_dataframe_are_allowed(eligibility_df, 0, 1)
+            if change_eligibility_df:
+                self._eligibility_df = eligibility_df
+                if self.signal_observation_calendar is None:
+                    self._signal_observation_calendar = eligibility_df.index
+            else:
+                raise ValueError("eligibility_df does not have the correct format.")
         else:
-            raise ValueError("eligibility_df does not have the correct format.")
+            self._eligibility_df = eligibility_df
 
 
 class _PriceBasedSignal(Signal):
@@ -114,6 +126,8 @@ class _PriceBasedSignal(Signal):
                                                                                              end_date)
 
     def get_signal_df(self) -> pd.DataFrame:
+        if self.signal_observation_calendar is None:
+            raise RuntimeError('Need to assign signal_observation_calendar before calculating signal')
         # assign a price DataFrame if applicable
         if self._underlying_price_df is None:
             self._set_underlying_price_df()
@@ -192,9 +206,18 @@ class SimpleMovingAverageCrossSignal(_PriceBasedSignal):
 def main():
     tickers = ["SAND.ST", "HM-B.ST", "AAK.ST"]
     dates = pd.date_range(start='2010', periods=50)
-    main_signal = SimpleMovingAverageCrossSignal((1, 10), tickers, dates)
+    main_signal = SimpleMovingAverageCrossSignal((1, 10), tickers)
+    main_signal.signal_observation_calendar = dates
     sma = main_signal.get_signal_df()
-    print(sma)
+    # print(sma)
+    print(main_signal.signal_observation_calendar)
+    print(main_signal.eligibility_df)
+    dates2 = pd.date_range(start='2010', periods=10)
+    main_signal.signal_observation_calendar = dates2
+    print(main_signal.signal_observation_calendar)
+    print(main_signal.eligibility_df)
+    main_signal.signal_observation_calendar = None
+    print(main_signal.signal_observation_calendar)
 
 
 if __name__ == '__main__':
