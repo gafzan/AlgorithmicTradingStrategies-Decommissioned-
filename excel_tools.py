@@ -23,7 +23,6 @@ def save_df(df_list: {list, pd.DataFrame}, workbook_name: str, folder_path: str,
     elif type(df_list) == list or type(sheet_name_list) == list:
         raise ValueError('\"df_list\" and \"sheet_name_list\" are not of the same type')
     else:
-        # TODO is instance of string
         df_list.to_excel(writer, sheet_name=sheet_name_list)  # write the DataFrame into excel
     writer.save()  # close the Pandas Excel writer and output the excel file
 
