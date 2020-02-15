@@ -1,11 +1,13 @@
 import pandas as pd
 from datetime import date, datetime
 import logging
+import matplotlib.pyplot as plt
 
 # my own modules
 from financial_database import FinancialDatabase
 from index_signal import Signal
-from index_weight import _Weight
+from index_weight import _Weight, EqualWeight
+from finance_tools import index_calculation
 
 # Logger
 logger = logging.getLogger(__name__)
@@ -61,29 +63,51 @@ class Index(Basket):
 
     def __init__(self, tickers: {str, list}, rebalancing_calendar: pd.DatetimeIndex, index_fee: float = 0.0,
                  transaction_cost: float = 0.0, currency: str = None, total_return: bool = False,
-                 dividend_tax: float = 0.0):
+                 dividend_tax: float = 0.0, initial_amount: float = 100.0):
         super().__init__(tickers, currency, total_return, dividend_tax)
         self.rebalancing_calendar = rebalancing_calendar
         self.index_fee = index_fee
         self.transaction_cost = transaction_cost
+        self.initial_amount = initial_amount
         self._signal = None
         self._weight = None
 
     def _check_before_back_test(self):
         if self.signal is None:
             self.signal = Signal(ticker_list=self.tickers)  # default signal
+        if self.weight is None:
+            raise ValueError('No weight assigned.')
 
-    def get_back_test(self, start_date: {date, datetime}, end_date: {date, datetime}):
+    def get_back_test(self, start_date: {date, datetime}=None, end_date: {date, datetime}=None,
+                      return_index_only: bool = True):
+        back_test = self._get_back_test_or_weight_df(True, start_date, end_date)
+        if return_index_only:
+            return back_test[['index']]
+        return back_test
+
+    def get_weight_df(self, start_date: {date, datetime}=None, end_date: {date, datetime}=None):
+        return self._get_back_test_or_weight_df(True, start_date, end_date)
+
+    def _get_back_test_or_weight_df(self, get_back_test: bool, start_date: {date, datetime}=None, end_date: {date, datetime}=None):
+        # TODO handle when dates are incorrect
+        underlying_price_df = self.basket_prices(start_date, end_date)
         self._check_before_back_test()
 
         # calculate the signal
+        if self.signal.signal_observation_calendar is None:
+            # assign an observation calendar if applicable
+            self.signal.signal_observation_calendar = underlying_price_df.index
         signal_df = self.signal.get_signal_df()
 
         # calculate the weights
         self.weight.signal_df = signal_df
         weight_df = self.weight.get_weights()
 
-        # calculate the index
+        if get_back_test:
+            return index_calculation(underlying_price_df, weight_df, self.transaction_cost, self.index_fee,
+                                     self.initial_amount)
+        else:
+            return weight_df
 
     # ------------------------------------------------------------------------------------------------------------------
     # getter and setter methods
@@ -93,7 +117,7 @@ class Index(Basket):
 
     @signal.setter
     def signal(self, signal):
-        if issubclass(signal, Signal) or isinstance(signal, Signal):
+        if issubclass(type(signal), Signal) or isinstance(signal, Signal):
             self._signal = signal
         else:
             raise ValueError('Needs to be an object from Signal class or a subclass of class Signal.')
@@ -104,7 +128,7 @@ class Index(Basket):
 
     @weight.setter
     def weight(self, weight):
-        if issubclass(weight, _Weight):
+        if issubclass(type(weight), _Weight):
             self._weight = weight
         else:
             raise ValueError('Needs to be an object from a subclass of class _Weight.')
@@ -141,13 +165,26 @@ class Index(Basket):
         else:
             raise ValueError('transaction_cost needs to be greater or equal to zero.')
 
+    @property
+    def initial_amount(self):
+        return self._initial_amount
+
+    @initial_amount.setter
+    def initial_amount(self, initial_amount: float):
+        if initial_amount > 0:
+            self._initial_amount = initial_amount
+        else:
+            raise ValueError('initial_amount needs to be greater than zero.')
+
 
 def main():
     tickers = ["SAND.ST", "HM-B.ST", "AAK.ST"]
     rebalance_cal = pd.date_range(start='2010', periods=5, freq='M')
     index_main = Index(tickers, rebalance_cal, total_return=True, dividend_tax=0.01, index_fee=-0.03)
-    print(index_main.signal)
-
+    index_main.weight = EqualWeight()
+    back_test = index_main.get_back_test()
+    back_test.plot()
+    plt.show()
 
 
 if __name__ == '__main__':
