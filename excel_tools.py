@@ -110,7 +110,7 @@ def format_risk_return_analysis_workbook(complete_workbook_path: str):
                 else:
                     cell.number_format = '#,##0.00'
                 cell.alignment = Alignment(horizontal='center', vertical='center')
-                performance_sheet.border = border
+                cell.border = border
         performance_sheet.freeze_panes = 'B2'
     except KeyError:
         raise ValueError("There is no sheet named 'Performance'")
@@ -138,7 +138,7 @@ def format_risk_return_analysis_workbook(complete_workbook_path: str):
                     cell.alignment = Alignment(horizontal='left', vertical='center')
                 else:
                     cell.alignment = Alignment(horizontal='center', vertical='center')
-                performance_sheet.border = border
+                cell.border = border
     except KeyError:
         raise ValueError("There is no sheet named 'Risk and return'")
     try:
@@ -158,7 +158,7 @@ def format_risk_return_analysis_workbook(complete_workbook_path: str):
                 else:
                     cell.number_format = '0.00%'
                 cell.alignment = Alignment(horizontal='center', vertical='center')
-                rolling_return_sheet.border = border
+                cell.border = border
         rolling_return_sheet.freeze_panes = 'B2'
     except KeyError:
         raise ValueError("There is no sheet named 'Rolling 1Y return'")
@@ -179,7 +179,7 @@ def format_risk_return_analysis_workbook(complete_workbook_path: str):
                 else:
                     cell.number_format = '0.00%'
                 cell.alignment = Alignment(horizontal='center', vertical='center')
-                rolling_volatility_sheet.border = border
+                cell.border = border
         rolling_volatility_sheet.freeze_panes = 'B2'
     except KeyError:
         raise ValueError("There is no sheet named 'Rolling 1Y volatility'")
@@ -200,7 +200,7 @@ def format_risk_return_analysis_workbook(complete_workbook_path: str):
                 else:
                     cell.number_format = '0.00%'
                 cell.alignment = Alignment(horizontal='center', vertical='center')
-                rolling_drawdown_sheet.border = border
+                cell.border = border
         rolling_drawdown_sheet.freeze_panes = 'B2'
     except KeyError:
         raise ValueError("There is no sheet named 'Rolling 1Y drawdown'")
@@ -224,7 +224,29 @@ def format_risk_return_analysis_workbook(complete_workbook_path: str):
                 if col == return_table_sheet.max_column and row != 1:
                     cell.fill = PatternFill(patternType='solid', fgColor=Color(rgb='EBF1DE'))
                     cell.font = Font(bold=True)
-                rolling_drawdown_sheet.border = border
+                cell.border = border
+
+    # format all weight tables by looping through each sheet who's name contains the substring 'weight'
+    weight_sheet_name_list = [sheet_name for sheet_name in workbook.sheetnames if 'weight' in sheet_name.lower()]
+    for weight_sheet_name in weight_sheet_name_list:
+        weight_sheet = workbook[weight_sheet_name]
+        weight_sheet.cell(row=1, column=1).value = 'Rebalancing date'
+        for col in range(1, weight_sheet.max_column + 1):
+            weight_sheet.column_dimensions[get_column_letter(col)].width = 15
+            for row in range(1, weight_sheet.max_row + 1):
+                cell = weight_sheet.cell(row=row, column=col)
+                if row == 1:
+                    cell.font = COLUMN_NAMES_FONT
+                    cell.fill = COLUMN_NAMES_FILL
+                elif col == 1:
+                    cell.number_format = 'D MMM YYYY'
+                    cell.fill = DATE_COLUMN_FILL
+                else:
+                    cell.number_format = '0.00%'
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+                cell.border = border
+        weight_sheet.freeze_panes = 'B2'
+
     workbook.save(complete_workbook_path)
 
 
