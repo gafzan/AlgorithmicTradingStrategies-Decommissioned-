@@ -1,10 +1,8 @@
-from excel_tools import load_df, save_df
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import math
 from matplotlib import cm
-from datetime import date
 
 
 def realized_volatility(price_df: pd.DataFrame, *vol_lag, annualized_factor: int = 252,
