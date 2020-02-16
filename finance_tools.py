@@ -23,40 +23,19 @@ def realized_volatility(price_df: pd.DataFrame, *vol_lag, annualized_factor: int
             max_volatility_df = volatility_sub_df
         else:
             max_volatility_df = pd.concat([max_volatility_df, volatility_sub_df]).max(level=0, skipna=False)
-    max_volatility_df.iloc[:max(vol_lag) - 1, :] = np.nan
+    # before price starts publishing, value should be nan regardless of data_availability_threshold
+    adjustment_df = price_df.pct_change().fillna(method='ffill').rolling(window=max(vol_lag)).mean().isnull()
+    adjustment_df = np.where(adjustment_df, np.nan, 1)
+    max_volatility_df *= adjustment_df
     return max_volatility_df
-
-
-"""
-    def _calculate_dataframe_to_be_ranked(self):
-        if isinstance(self.volatility_lag, int):
-            volatility_df = realized_volatility(self.underlying_price_df, vol_lag=self.volatility_lag)
-        else:
-            # when volatility_lag is a list, take the maximum volatility
-            max_volatility_df = None
-            counter = 0
-            for lag in self.volatility_lag:
-                volatility_sub_df = realized_volatility(self.underlying_price_df, vol_lag=lag)
-                if counter == 0:
-                    max_volatility_df = volatility_sub_df
-                else:
-                    max_volatility_df = pd.concat([max_volatility_df, volatility_sub_df]).max(level=0, skipna=False)
-                counter += 1
-            volatility_df = max_volatility_df
-        return volatility_df
-"""
 
 
 def relative_sma(price_df: pd.DataFrame, sma_lag: int, data_availability_threshold: float = 0.9) -> pd.DataFrame:
     """Assumes price_df is a DataFrame filled with daily prices as values, tickers as column names and observation dates
     as index. Assumes that measurement_interval and annualized_factor is int and data_availability_threshold is a float.
     Returns a DataFrame with the simple moving average (SMA) divided by the spot."""
-    if sma_lag < 1:
-        raise ValueError("sma_lag needs to be an 'int' larger or equal to 1")
-    minimum_measurement_points = int(data_availability_threshold * sma_lag)
-    relative_sma_df = price_df.rolling(window=sma_lag, min_periods=minimum_measurement_points).mean()
-    relative_sma_df /= price_df
-    relative_sma_df.iloc[:sma_lag - 1, :] = np.nan
+    sma_df = rolling_average(price_df, sma_lag, data_availability_threshold)
+    relative_sma_df = sma_df / price_df.fillna(method='ffill')
     return relative_sma_df
 
 
@@ -68,7 +47,10 @@ def rolling_average(data_df: pd.DataFrame, avg_lag: int, data_availability_thres
         raise ValueError("avg_lag needs to be an 'int' larger or equal to 1")
     minimum_measurement_points = int(data_availability_threshold * avg_lag)
     rolling_avg = data_df.rolling(window=avg_lag, min_periods=minimum_measurement_points).mean()
-    rolling_avg.iloc[:avg_lag - 1, :] = np.nan
+    # before price starts publishing,
+    adjustment_df = data_df.fillna(method='ffill').rolling(window=avg_lag).mean().isnull()
+    adjustment_df = np.where(adjustment_df, np.nan, 1)
+    rolling_avg *= adjustment_df
     return rolling_avg
 
 
@@ -335,14 +317,18 @@ def plot_results(df_dict: {dict}):
 
 def main():
     folder_path = r'C:\Users\gafza\PycharmProjects\AlgorithmicTradingStrategies\excel_data'
-    close_df = load_df('4 stocks on OMX', folder_path, sheet_name='Sheet1')
-    save_df([realized_volatility(close_df, 20, 60), close_df], 'volatility test', folder_path, sheet_name_list=['vol', 'price'])
+    # close_df = load_df('4 stocks on OMX', folder_path, sheet_name='Sheet1')
+    # save_df([realized_volatility(close_df, 20, 60), close_df], 'volatility test', folder_path, sheet_name_list=['vol', 'price'])
 
     # result_dict = return_and_risk_analysis(close_df)
     # save_df(df_list=list(result_dict.values()),
     #         workbook_name='performance data test' + ' - ' + str(date.today())[:10],
     #         folder_path=folder_path, sheet_name_list=list(result_dict.keys()))
     # plot_results(result_dict)
+
+    df = pd.DataFrame({'A': [np.nan, np.nan, np.nan, np.nan, 1, 2, 3, np.nan, np.nan, np.nan, 7]})
+    print(df)
+    print(rolling_average(df, 3, 0.5))
 
 
 if __name__ == '__main__':

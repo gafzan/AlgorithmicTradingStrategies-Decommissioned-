@@ -100,6 +100,8 @@ class Index(Basket):
         underlying_price_df = self.basket_prices(start_date, end_date)
         self._check_before_back_test()
 
+        # adjust rebalance calendar by moving one business day ahead in the underlying price calendar
+
         # calculate the signal and if there is no observation calendar assigned to the signal assign a default one
         if self.signal.signal_observation_calendar is None:
             self.signal.signal_observation_calendar = underlying_price_df.index
@@ -200,6 +202,20 @@ def main():
     # plt.show()
 
 
+def main_dates():
+    rebalance_cal = pd.date_range(start='2010', periods=10, freq='M')
+    cal = pd.date_range(start='2010', end=rebalance_cal[0], freq='D')
+
+    rebalance_cal_list = list(rebalance_cal)
+    cal_list = list(cal)
+    rebalance_cal_list_adj = []
+    for reb_date in rebalance_cal_list:
+        if reb_date in cal_list:
+            reb_date_adj = reb_date
+        else:
+            date_diff = [date_in_cal - reb_date for date_in_cal in cal if date_in_cal - reb_date > 0]
+            print(date_diff)
+
 if __name__ == '__main__':
-    main()
+    main_dates()
 
