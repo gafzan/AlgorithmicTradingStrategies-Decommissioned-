@@ -7,19 +7,44 @@ from matplotlib import cm
 from datetime import date
 
 
-def realized_volatility(price_df: pd.DataFrame, vol_lag: int, annualized_factor: int = 252,
+def realized_volatility(price_df: pd.DataFrame, *vol_lag, annualized_factor: int = 252,
                         data_availability_threshold: float = 0.9) -> pd.DataFrame:
     """Assumes price_df is a DataFrame filled with daily prices as values, tickers as column names and observation dates
     as index. Assumes that measurement_interval and annualized_factor is int and data_availability_threshold is a float.
     Returns a DataFrame with the rolling annualized realized volatility."""
-    if vol_lag < 2:
-        raise ValueError("vol_lag needs to be an 'int' larger or equal to 2")
-    minimum_measurement_points = int(data_availability_threshold * vol_lag)
-    rolling_vol_df = price_df.pct_change()\
-                      .rolling(window=vol_lag, min_periods=minimum_measurement_points)\
-                      .std() * (annualized_factor ** 0.5)
-    rolling_vol_df.iloc[:vol_lag - 1, :] = np.nan
-    return rolling_vol_df
+    if min(vol_lag) < 2:
+        raise ValueError("vol_lag needs to be an 'int' larger or equal to 2.")
+    max_volatility_df = None
+    for lag in vol_lag:
+        minimum_measurement_points = int(data_availability_threshold * lag)
+        volatility_sub_df = price_df.pct_change().rolling(window=lag, min_periods=minimum_measurement_points)\
+                                .std() * (annualized_factor ** 0.5)
+        if max_volatility_df is None:
+            max_volatility_df = volatility_sub_df
+        else:
+            max_volatility_df = pd.concat([max_volatility_df, volatility_sub_df]).max(level=0, skipna=False)
+    max_volatility_df.iloc[:max(vol_lag) - 1, :] = np.nan
+    return max_volatility_df
+
+
+"""
+    def _calculate_dataframe_to_be_ranked(self):
+        if isinstance(self.volatility_lag, int):
+            volatility_df = realized_volatility(self.underlying_price_df, vol_lag=self.volatility_lag)
+        else:
+            # when volatility_lag is a list, take the maximum volatility
+            max_volatility_df = None
+            counter = 0
+            for lag in self.volatility_lag:
+                volatility_sub_df = realized_volatility(self.underlying_price_df, vol_lag=lag)
+                if counter == 0:
+                    max_volatility_df = volatility_sub_df
+                else:
+                    max_volatility_df = pd.concat([max_volatility_df, volatility_sub_df]).max(level=0, skipna=False)
+                counter += 1
+            volatility_df = max_volatility_df
+        return volatility_df
+"""
 
 
 def relative_sma(price_df: pd.DataFrame, sma_lag: int, data_availability_threshold: float = 0.9) -> pd.DataFrame:
@@ -311,11 +336,13 @@ def plot_results(df_dict: {dict}):
 def main():
     folder_path = r'C:\Users\gafza\PycharmProjects\AlgorithmicTradingStrategies\excel_data'
     close_df = load_df('4 stocks on OMX', folder_path, sheet_name='Sheet1')
-    result_dict = return_and_risk_analysis(close_df)
-    save_df(df_list=list(result_dict.values()),
-            workbook_name='performance data test' + ' - ' + str(date.today())[:10],
-            folder_path=folder_path, sheet_name_list=list(result_dict.keys()))
-    plot_results(result_dict)
+    save_df([realized_volatility(close_df, 20, 60), close_df], 'volatility test', folder_path, sheet_name_list=['vol', 'price'])
+
+    # result_dict = return_and_risk_analysis(close_df)
+    # save_df(df_list=list(result_dict.values()),
+    #         workbook_name='performance data test' + ' - ' + str(date.today())[:10],
+    #         folder_path=folder_path, sheet_name_list=list(result_dict.keys()))
+    # plot_results(result_dict)
 
 
 if __name__ == '__main__':
