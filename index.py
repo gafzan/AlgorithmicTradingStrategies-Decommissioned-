@@ -101,6 +101,7 @@ class Index(Basket):
         self._check_before_back_test()
 
         # adjust rebalance calendar by moving one business day ahead in the underlying price calendar
+        rebalancing_calendar = self.adjust_rebalance_calendar(self.rebalancing_calendar, underlying_price_df.index)
 
         # calculate the signal and if there is no observation calendar assigned to the signal assign a default one
         if self.signal.signal_observation_calendar is None:
@@ -110,7 +111,7 @@ class Index(Basket):
         # calculate the weights
         self.weight.signal_df = signal_df
         weight_df = self.weight.get_weights()
-        weight_df = select_rows_from_dataframe_based_on_sub_calendar(weight_df, self.rebalancing_calendar)
+        weight_df = select_rows_from_dataframe_based_on_sub_calendar(weight_df, rebalancing_calendar)
 
         if get_back_test:
             return index_calculation(underlying_price_df, weight_df, self.transaction_cost, self.index_fee,
@@ -119,7 +120,26 @@ class Index(Basket):
             return weight_df
 
     # ------------------------------------------------------------------------------------------------------------------
-    # getter and setter methods
+    # getter and setter and static methods
+    @staticmethod
+    def adjust_rebalance_calendar(rebalance_calendar: pd.DatetimeIndex, daily_calendar: pd.DatetimeIndex) \
+            -> pd.DatetimeIndex:
+        """Assumes that rebalance_calendar and daily_calendar are of type DatetimeIndex. If a rebalance date does not
+        exist in daily_calendar, pick the following day. Returns a DatetimeIndex."""
+        date_is_in_cal = np.array(np.in1d(np.array(rebalance_calendar.values, dtype='datetime64[D]'),
+                                          np.array(daily_calendar.values, dtype='datetime64[D]')))
+        adjusted_date_list = []
+        for i in range(date_is_in_cal.size):
+            if date_is_in_cal[i]:
+                adjusted_date_list.append(rebalance_calendar[i])
+            else:
+                # find the following day to be the rebalance date if it does not exist in the daily calendar
+                adjusted_date_list.append(
+                    max(daily_calendar,
+                        key=lambda x: min((x - rebalance_calendar[i]).days, 0))
+                )
+        return pd.DatetimeIndex(adjusted_date_list)
+
     @property
     def signal(self):
         return self._signal
@@ -203,18 +223,30 @@ def main():
 
 
 def main_dates():
-    rebalance_cal = pd.date_range(start='2010', periods=10, freq='M')
-    cal = pd.date_range(start='2010', end=rebalance_cal[0], freq='D')
+    calendar_with_missing_dates = pd.date_range(start='2010', end='2011', freq='2D')
+    calendar = pd.date_range(start='2010', end='2011', freq='M')
 
-    rebalance_cal_list = list(rebalance_cal)
-    cal_list = list(cal)
-    rebalance_cal_list_adj = []
-    for reb_date in rebalance_cal_list:
-        if reb_date in cal_list:
-            reb_date_adj = reb_date
+    # for each date complete_calendar, if the date does not exist in sub_cal, pick the next available date in sub_cal
+
+    date_is_in_cal = np.array(np.in1d(np.array(calendar.values, dtype='datetime64[D]'),
+                                      np.array(calendar_with_missing_dates.values, dtype='datetime64[D]')))
+    adjusted_date_list = []
+    for i in range(date_is_in_cal.size):
+        if date_is_in_cal[i]:
+            adjusted_date_list.append(calendar[i])
         else:
-            date_diff = [date_in_cal - reb_date for date_in_cal in cal if date_in_cal - reb_date > 0]
-            print(date_diff)
+            adjusted_date_list.append(
+                max(calendar_with_missing_dates, key=lambda x: min((x - calendar[i]).days, 0))
+            )
+
+    for i in range(len(calendar)):
+        print(f'{i} old date: {calendar[i]}')
+        print(f'{i} NEW date: {adjusted_date_list[i]}\n')
+    for cal_date in calendar_with_missing_dates:
+        print(cal_date)
+
+    print(pd.DatetimeIndex(adjusted_date_list))
+
 
 if __name__ == '__main__':
     main_dates()

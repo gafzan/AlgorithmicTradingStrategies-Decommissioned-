@@ -45,7 +45,7 @@ def rolling_average(data_df: pd.DataFrame, avg_lag: int, data_availability_thres
         raise ValueError("avg_lag needs to be an 'int' larger or equal to 1")
     minimum_measurement_points = int(data_availability_threshold * avg_lag)
     rolling_avg = data_df.rolling(window=avg_lag, min_periods=minimum_measurement_points).mean()
-    # before price starts publishing,
+    # before price starts publishing, value should be nan regardless of data_availability_threshold
     adjustment_df = data_df.fillna(method='ffill').rolling(window=avg_lag).mean().isnull()
     adjustment_df = np.where(adjustment_df, np.nan, 1)
     rolling_avg *= adjustment_df
@@ -317,16 +317,13 @@ def main():
     folder_path = r'C:\Users\gafza\PycharmProjects\AlgorithmicTradingStrategies\excel_data'
     # close_df = load_df('4 stocks on OMX', folder_path, sheet_name='Sheet1')
     # save_df([realized_volatility(close_df, 20, 60), close_df], 'volatility test', folder_path, sheet_name_list=['vol', 'price'])
-
+    #
     # result_dict = return_and_risk_analysis(close_df)
     # save_df(df_list=list(result_dict.values()),
     #         workbook_name='performance data test' + ' - ' + str(date.today())[:10],
     #         folder_path=folder_path, sheet_name_list=list(result_dict.keys()))
     # plot_results(result_dict)
 
-    df = pd.DataFrame({'A': [np.nan, np.nan, np.nan, np.nan, 1, 2, 3, np.nan, np.nan, np.nan, 7]})
-    print(df)
-    print(rolling_average(df, 3, 0.5))
 
 
 if __name__ == '__main__':

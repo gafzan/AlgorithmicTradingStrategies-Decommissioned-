@@ -2,32 +2,54 @@ import pandas as pd
 from pathlib import Path
 import sys
 import os
+import logging
 from openpyxl import load_workbook
 from openpyxl.styles.borders import Border, Side
 from openpyxl.styles import Alignment, Font, PatternFill, Color
 from openpyxl.utils import get_column_letter
 
-
 # -----------------------------------------------------------------------------------------------
 # excel_tools.py
 # -----------------------------------------------------------------------------------------------
 
+# logger
+formatter = logging.Formatter('%(asctime)s : %(module)s : %(funcName)s : %(message)s')
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+logger = logging.getLogger(__name__)
+logger.addHandler(stream_handler)
 
-def save_df(df_list: {list, pd.DataFrame}, workbook_name: str, folder_path: str, sheet_name_list: {list, str}='Sheet1'):
+
+def save_df(df_list: {list, pd.DataFrame}, workbook_name: str, folder_path: str, sheet_name_list: {str, list}=None):
     """Assumes df_list is a list of DataFrame, name is a string and sheet_name_list is a list of strings
     Saves all DataFrames in df_list to a sheet with the corresponding name in sheet_list"""
     file_name = '\\' + workbook_name + '.xlsx'
     writer = pd.ExcelWriter(folder_path + file_name, engine='xlsxwriter')
+
+    if sheet_name_list is None:
+        if type(df_list) == list:
+            sheet_name_list = []
+            for i in range(len(df_list)):
+                sheet_name_list.append(f'Sheet{i + 1}')
+        else:
+            sheet_name_list = 'Sheet1'
+
     if type(df_list) == type(sheet_name_list) == list:
         if len(df_list) == len(sheet_name_list):
             for i in range(len(df_list)):
-                df_list[i].to_excel(writer, sheet_name=sheet_name_list[i])  # write the DataFrame into excel
+                if len(sheet_name_list[i]) > 31:
+                    logger.warning(f"'{sheet_name_list[i]}' is too long (needs to be less than 31 characters). "
+                                   f"\n'{sheet_name_list[i]}' will be shortened to {sheet_name_list[i][:31]}")
+                df_list[i].to_excel(writer, sheet_name=sheet_name_list[i][:31])  # write the DataFrame into excel
         else:
             raise ValueError('\"df_list\" and \"sheet_name_list\" are not of the same length')
     elif type(df_list) == list or type(sheet_name_list) == list:
         raise ValueError('\"df_list\" and \"sheet_name_list\" are not of the same type')
     else:
-        df_list.to_excel(writer, sheet_name=sheet_name_list)  # write the DataFrame into excel
+        if len(sheet_name_list) > 31:
+            logger.warning(f"'{sheet_name_list}' is too long (needs to be less than 31 characters). "
+                           f"\n'{sheet_name_list}' will be shortened to {sheet_name_list[:31]}")
+        df_list.to_excel(writer, sheet_name=sheet_name_list[:31])  # write the DataFrame into excel
     writer.save()  # close the Pandas Excel writer and output the excel file
 
 
@@ -252,7 +274,8 @@ def format_risk_return_analysis_workbook(complete_workbook_path: str):
 
 def main():
     path = r'C:\Users\gafza\PycharmProjects\AlgorithmicTradingStrategies\excel_data\performance data test - 2020-02-15.xlsx'
-    format_risk_return_analysis_workbook(path)
+    df_dict = format_risk_return_analysis_workbook(path)
+    save_df(list(df_dict.values()), "TEST error handling", path)
 
 
 if __name__ == '__main__':
