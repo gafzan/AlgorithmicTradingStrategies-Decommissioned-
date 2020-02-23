@@ -5,8 +5,8 @@ import math
 from matplotlib import cm
 
 
-def realized_volatility(price_df: pd.DataFrame, *vol_lag, annualized_factor: int = 252,
-                        data_availability_threshold: float = 0.9) -> pd.DataFrame:
+def realized_volatility(price_df: pd.DataFrame, *vol_lag, annualized_factor: int = 252, allowed_number_na: int = 5) \
+        -> pd.DataFrame:
     """Assumes price_df is a DataFrame filled with daily prices as values, tickers as column names and observation dates
     as index. Assumes that measurement_interval and annualized_factor is int and data_availability_threshold is a float.
     Returns a DataFrame with the rolling annualized realized volatility."""
@@ -14,9 +14,9 @@ def realized_volatility(price_df: pd.DataFrame, *vol_lag, annualized_factor: int
         raise ValueError("vol_lag needs to be an 'int' larger or equal to 2.")
     max_volatility_df = None
     for lag in vol_lag:
-        minimum_measurement_points = int(data_availability_threshold * lag)
-        volatility_sub_df = price_df.pct_change().rolling(window=lag, min_periods=minimum_measurement_points)\
-                                .std() * (annualized_factor ** 0.5)
+        return_df = price_df.pct_change(fill_method=None)
+        volatility_sub_df = return_df.rolling(window=lag, min_periods=allowed_number_na).std() \
+                            * (annualized_factor ** 0.5)
         if max_volatility_df is None:
             max_volatility_df = volatility_sub_df
         else:
@@ -311,20 +311,3 @@ def plot_results(df_dict: {dict}):
     df_dict['Rolling 1Y return'].plot(grid=True, title='1Y return', colormap=cmap)
     performance_df.plot(grid=True, title='Performance', colormap=cmap)
     plt.show()
-
-
-def main():
-    folder_path = r'C:\Users\gafza\PycharmProjects\AlgorithmicTradingStrategies\excel_data'
-    # close_df = load_df('4 stocks on OMX', folder_path, sheet_name='Sheet1')
-    # save_df([realized_volatility(close_df, 20, 60), close_df], 'volatility test', folder_path, sheet_name_list=['vol', 'price'])
-    #
-    # result_dict = return_and_risk_analysis(close_df)
-    # save_df(df_list=list(result_dict.values()),
-    #         workbook_name='performance data test' + ' - ' + str(date.today())[:10],
-    #         folder_path=folder_path, sheet_name_list=list(result_dict.keys()))
-    # plot_results(result_dict)
-
-
-
-if __name__ == '__main__':
-    main()
