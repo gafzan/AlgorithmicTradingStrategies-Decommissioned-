@@ -3,9 +3,10 @@ import numpy as np
 from financial_database import FinancialDatabase
 from config_database import my_database_name
 from dataframe_tools import dataframe_has_same_index_and_column_names, check_if_values_in_dataframe_are_allowed, \
-    select_rows_from_dataframe_based_on_sub_calendar
+    select_rows_from_dataframe_based_on_sub_calendar, get_unique_values_from_dataframe
 from finance_tools import realized_volatility
 from datetime import timedelta
+from index_signal import SimpleMovingAverageCrossSignal
 
 
 class _Weight:
@@ -89,35 +90,36 @@ class StaticWeight(_Weight):
     # Overriding the setter property in the parent class because of different constraint on signal DataFrame.
     @_Weight.signal_df.setter
     def signal_df(self, signal_df: pd.DataFrame):
-        if signal_df is None or check_if_values_in_dataframe_are_allowed(signal_df, 0, 1):
-            self._signal_df = signal_df
-        else:
-            raise ValueError('Signal DataFrame contains more values than 0 and 1.')
+        self._signal_df = signal_df
 
     @staticmethod
     def _get_static_weights(signal_df: pd.DataFrame) -> pd.DataFrame:
         """Assumes that signal_df is a DataFrame containing 0 (neutral) or 1 (long). Returns a DataFrame with the
         static weights chosen by the user."""
-        message = ''
-        weight_list = []
         counter = 0
-        weight_sum = 0
+        weight_df = pd.DataFrame(index=signal_df.index, columns=signal_df.columns)
         for ticker in list(signal_df):
-            ask_user = True
-            while ask_user:
-                try:
-                    weight_from_user = float(input(f'Enter weight(%) for {ticker} '
-                                                   f'({counter + 1}/{len(list(signal_df))}): '))
-                    weight_list.append(weight_from_user)
-                except ValueError:
-                    pass
-                else:
-                    ask_user = False
-            message += f'\n{ticker} weight = {weight_list[counter]}%'
-            weight_sum += weight_list[counter]
-            print(message + f'\nTotal weight = {weight_sum}%\n')
+            signal_values = set(signal_df.loc[:, ticker].values)  # unique signal values for each ticker
+            try:
+                signal_values.remove(0)
+            except KeyError:
+                pass
+            # ask user to insert each weight corresponding to the values of the signal (except 0) for each ticker
+            signal_weight_dict = {}
+            for signal in signal_values:
+                ask_user = True
+                while ask_user:
+                    try:
+                        weight_from_user = float(input(f'Enter weight(%) for {ticker} ({counter + 1}/{len(list(signal_df))}) '
+                                                       f'during signal = {signal} {signal_values}: '))
+                    except ValueError:
+                        pass
+                    else:
+                        signal_weight_dict.update({signal: weight_from_user / 100})
+                        ask_user = False
+            weight_df[ticker] = signal_df[ticker].map(signal_weight_dict)
             counter += 1
-        return signal_df.mul(weight_list, axis=1)
+        return weight_df
 
 
 class _ProportionalValueWeight(_Weight):
@@ -211,29 +213,13 @@ def is_weight_subclass_instance(obj):
 def main():
 
     # Signal
-    calendar = pd.bdate_range(start='2019-01-10', periods=5, freq='M')
-    signal_df = pd.DataFrame(data=1, index=calendar, columns=['AAK.ST', 'ABB.ST', 'ACAD.ST'])
-    signal_df.iloc[2, 2] = 0
-    signal_df.iloc[1, 1] = -1
-    signal_df.iloc[1, 0] = -1
-    print(signal_df)
-
-    # Weight
-    main_weight = _Weight(signal_df)
-    print(main_weight)
-
-    # Equal weight
-    main_equal_weight = EqualWeight(total_short_allocation=-1, signal_df=signal_df)
-    print(main_equal_weight.get_weights())
-
-    # Volatility weighted
-    signal_df.iloc[1, 1] = 0
-    signal_df.iloc[1, 0] = 0
-    main_vol_weight = VolatilityWeight(60, signal_df=signal_df)
-    print(main_vol_weight.get_weights())
+    calendar = pd.bdate_range(start='2010-01-10', end='2019-01-10', freq='M')
+    tickers = ['AAK.ST', 'ABB.ST']
+    sma_signal = SimpleMovingAverageCrossSignal((1, 50), tickers, calendar)
 
     main_static_weight = StaticWeight()
-    main_static_weight.signal_df = signal_df
+    print(sma_signal.get_signal_df())
+    main_static_weight.signal_df = sma_signal.get_signal_df()
     print(main_static_weight.get_weights())
 
 
