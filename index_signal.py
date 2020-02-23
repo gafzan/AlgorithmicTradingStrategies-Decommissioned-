@@ -2,10 +2,11 @@ import pandas as pd
 from pandas.tseries.offsets import BDay
 import numpy as np
 from financial_database import FinancialDatabase
+from excel_tools import save_df
 
 # my own modules
 from dataframe_tools import select_rows_from_dataframe_based_on_sub_calendar, check_if_values_in_dataframe_are_allowed
-from finance_tools import rolling_average
+from finance_tools import rolling_average, realized_volatility
 
 
 class Signal:
@@ -106,9 +107,10 @@ class _PriceBasedSignal(Signal):
     ticker_list and signal_observation_calendar since they need to reset the price DataFrame."""
 
     def __init__(self, ticker_list: list, signal_observation_calendar: pd.DatetimeIndex,
-                 eligibility_df: pd.DataFrame, total_return: bool):
-        super().__init__(ticker_list, signal_observation_calendar, eligibility_df)
-        self._total_return = total_return  # since underlying_price_df will be set to None at init, no need to use setter
+                 eligibility_df: pd.DataFrame, total_return: bool, currency: str):
+        Signal.__init__(self, ticker_list, signal_observation_calendar, eligibility_df)
+        self._total_return = total_return
+        self._currency = currency
         self._underlying_price_df = None  # DataFrame is assigned using the method _set_underlying_price_df
         self._bday_before_start_date_buffer = 10  # add a some extra prices before start of signal observation calendar
 
@@ -116,13 +118,15 @@ class _PriceBasedSignal(Signal):
         start_date = self.signal_observation_calendar[0] - BDay(self._bday_before_start_date_buffer)
         end_date = self.signal_observation_calendar[-1]
         if self.total_return:
-            self._underlying_price_df = self._financial_database_handler.get_close_price_df(self.ticker_list,
-                                                                                            start_date,
-                                                                                            end_date)
-        else:
             self._underlying_price_df = self._financial_database_handler.get_total_return_df(self.ticker_list,
                                                                                              start_date,
-                                                                                             end_date)
+                                                                                             end_date,
+                                                                                             currency=self.currency)
+        else:
+            self._underlying_price_df = self._financial_database_handler.get_close_price_df(self.ticker_list,
+                                                                                            start_date,
+                                                                                            end_date, self.currency)
+
 
     def get_signal_df(self) -> pd.DataFrame:
         if self.signal_observation_calendar is None:
@@ -145,6 +149,14 @@ class _PriceBasedSignal(Signal):
         self._total_return = total_return
         self._underlying_price_df = None  # reset the price DataFrame
 
+    @property
+    def currency(self):
+        return self._currency
+
+    @currency.setter
+    def currency(self, currency: str):
+        self._currency = currency
+
     @Signal.ticker_list.setter
     def ticker_list(self, ticker_list: list):
         self._ticker_list = ticker_list
@@ -158,6 +170,126 @@ class _PriceBasedSignal(Signal):
         self._underlying_price_df = None  # reset the price DataFrame
 
 
+class _RankSignal(Signal):
+    """Class definition of _RankSignal.
+    Subclass of Signal."""
+
+    def __init__(self, ticker_list: list, signal_observation_calendar: pd.DatetimeIndex, eligibility_df: pd.DataFrame,
+                 rank_number: int, rank_fraction: float, descending: bool, include: bool):
+        self._check_inputs(rank_number, rank_fraction)
+        Signal.__init__(self, ticker_list, signal_observation_calendar, eligibility_df)
+        self.rank_number = rank_number
+        self.rank_fraction = rank_fraction
+        self.descending = descending
+        self.include = include
+
+    def _perform_ranking_on_dataframe(self, data_to_be_ranked: pd.DataFrame) -> pd.DataFrame:
+        """Ranks data in a DataFrame in either descending or ascending order"""
+        ranked_df = data_to_be_ranked.rank(axis='columns', method='first', ascending=not self.descending,
+                                           numeric_only=True)
+        if self.rank_number is not None:
+            signal_array = np.where(ranked_df <= self.rank_number, self.include, not self.include)
+        else:
+            count_non_nan_s = ranked_df.count(axis=1)
+            rank_number_s = round(count_non_nan_s * self.rank_fraction)
+            signal_array = np.where(ranked_df.le(rank_number_s, axis=0), self.include,
+                                    not self.include)  # True if df is Less or Equal to series
+        signal_df = pd.DataFrame(index=data_to_be_ranked.index, columns=data_to_be_ranked.columns,
+                                 data=signal_array)
+        signal_df *= 1  # convert True to 1 and False to 0
+        return signal_df
+
+    # ------------------------------------------------------------------------------------------------------------------
+    # getter, setter
+    @staticmethod
+    def _check_inputs(rank_number: int, rank_fraction: float):
+        if rank_number is None and rank_fraction is None:
+            raise ValueError('One needs to specify one of the two parameters rank_number and rank_fraction.')
+        if rank_number is not None and rank_fraction is not None:
+            raise ValueError('Of the two parameters rank_number and rank_fraction only one must be specified.')
+
+    @property
+    def rank_number(self):
+        return self._rank_number
+
+    @property
+    def rank_fraction(self):
+        return self._rank_fraction
+
+    @rank_number.setter
+    def rank_number(self, rank_number: int):
+        if rank_number is None:
+            self._rank_number = rank_number
+        elif rank_number >= 1:
+            self._rank_number = rank_number
+            self._rank_fraction = None
+        else:
+            raise ValueError('rank_number needs to be greater or equal to 1.')
+
+    @rank_fraction.setter
+    def rank_fraction(self, rank_fraction: float):
+        if rank_fraction is None:
+            self._rank_fraction = rank_fraction
+        elif 0.0 < rank_fraction < 1.0:
+            self._rank_fraction = rank_fraction
+            self._rank_number = None
+        else:
+            raise ValueError('rank_fraction needs to be greater than 0 and less than 1.')
+
+
+class _PriceBasedRankSignal(_PriceBasedSignal, _RankSignal):
+    """Class definition of _PriceBasedRankSignal.
+    Subclass of _PriceBasedSignal and _RankSignal."""
+
+    def __init__(self, ticker_list: list, signal_observation_calendar: pd.DatetimeIndex, eligibility_df: pd.DataFrame,
+                 rank_number: int, rank_fraction: float, descending: bool, include: bool, total_return: bool,
+                 currency: str):
+        _RankSignal.__init__(self, ticker_list, signal_observation_calendar, eligibility_df, rank_number, rank_fraction,
+                             descending, include)
+        _PriceBasedSignal.__init__(self, ticker_list, signal_observation_calendar, eligibility_df, total_return,
+                                   currency)
+
+
+class VolatilityRankSignal(_PriceBasedRankSignal):
+    """Class definition of VolatilityRankSignal.
+    Subclass of _PriceBasedRankSignal."""
+
+    def __init__(self, vol_lag: {int, tuple, list}, ticker_list: list = None, signal_observation_calendar: pd.DatetimeIndex = None,
+                 eligibility_df: pd.DataFrame = None, rank_number: int = None, rank_fraction: float = None,
+                 descending: bool = False, include: bool = True, total_return: bool = True, currency: str = None):
+        _PriceBasedRankSignal.__init__(self, ticker_list, signal_observation_calendar, eligibility_df, rank_number,
+                                       rank_fraction, descending, include, total_return, currency)
+        self.vol_lag = vol_lag
+
+    def _calculate_signal(self, eligibility_df: pd.DataFrame):
+        """Calculates the realized volatility and then performs the ranking signal."""
+        print(self._underlying_price_df.index[0])
+        volatility_df = realized_volatility(self._underlying_price_df, *self.vol_lag)
+        print(volatility_df['2006-12-25':])
+        # print(volatility_df['2006-12-25':])
+        volatility_df = select_rows_from_dataframe_based_on_sub_calendar(volatility_df,
+                                                                         eligibility_df.index)
+        volatility_df *= eligibility_df.replace(0, np.nan)  # based on eligibility_df, if 0 replace volatility with nan.
+        signal_df = self._perform_ranking_on_dataframe(volatility_df)
+        return signal_df
+
+    # ------------------------------------------------------------------------------------------------------------------
+    # getter, setter
+    @property
+    def vol_lag(self):
+        return self._vol_lag
+
+    @vol_lag.setter
+    def vol_lag(self, vol_lag):
+        if isinstance(vol_lag, int):
+            vol_lag = [vol_lag]
+        if all(isinstance(lag, int) and lag > 1 for lag in vol_lag):  # all are int and larger than 1
+            self._vol_lag = vol_lag
+            self._bday_before_start_date_buffer = max(self._vol_lag) + 10
+        else:
+            raise ValueError('vol_lag needs to be an int or an iterable of int larger than 1')
+
+
 class SimpleMovingAverageCrossSignal(_PriceBasedSignal):
     """Class definition of SimpleMovingAverageCrossSignal.
     Subclass of _PriceBasedSignal. Overrides the _calculate_signal method."""
@@ -165,7 +297,7 @@ class SimpleMovingAverageCrossSignal(_PriceBasedSignal):
     def __init__(self, leading_lagging_window: {list, tuple}, ticker_list: list = None,
                  signal_observation_calendar: pd.DatetimeIndex = None, eligibility_df: pd.DataFrame = None,
                  total_return: bool = False):
-        super().__init__(ticker_list, signal_observation_calendar, eligibility_df, total_return)
+        _PriceBasedSignal.__init__(self, ticker_list, signal_observation_calendar, eligibility_df, total_return, None)
         self.leading_lagging_window = leading_lagging_window
         self._bday_before_start_date_buffer = self._lagging_window + 10
 
@@ -177,10 +309,7 @@ class SimpleMovingAverageCrossSignal(_PriceBasedSignal):
         lagging_sma_df = rolling_average(self._underlying_price_df, self._lagging_window)
         signal_array = np.where(leading_sma_df > lagging_sma_df, 1, -1)
         sma_is_not_nan = ~(leading_sma_df + lagging_sma_df).isnull()
-
-        # add 0 (neutral) if any SMA is NaN and apply the constraints
-        signal_df = signal_array * sma_is_not_nan
-
+        signal_df = signal_array * sma_is_not_nan  # add 0 (neutral) if any SMA is NaN and apply the constraints
         # apply the eligibility filter
         signal_df = select_rows_from_dataframe_based_on_sub_calendar(signal_df, self.signal_observation_calendar)
         signal_df *= self.eligibility_df
@@ -200,23 +329,40 @@ class SimpleMovingAverageCrossSignal(_PriceBasedSignal):
             self._leading_window = int(min(leading_lagging_window))
             self._lagging_window = int(max(leading_lagging_window))
             self._leading_lagging_window = leading_lagging_window
+            self._bday_before_start_date_buffer = self._lagging_window + 10
 
 
 def main():
     tickers = ["SAND.ST", "HM-B.ST", "AAK.ST"]
+    tickers = ["SAND.ST", "AAK.ST"]
     dates = pd.date_range(start='2010', periods=50)
-    main_signal = SimpleMovingAverageCrossSignal((1, 10), tickers)
-    main_signal.signal_observation_calendar = dates
-    sma = main_signal.get_signal_df()
-    # print(sma)
-    print(main_signal.signal_observation_calendar)
-    print(main_signal.eligibility_df)
-    dates2 = pd.date_range(start='2010', periods=10)
-    main_signal.signal_observation_calendar = dates2
-    print(main_signal.signal_observation_calendar)
-    print(main_signal.eligibility_df)
-    main_signal.signal_observation_calendar = None
-    print(main_signal.signal_observation_calendar)
+    # main_signal = SimpleMovingAverageCrossSignal((1, 10), tickers)
+    # main_signal.signal_observation_calendar = dates
+    # sma = main_signal.get_signal_df()
+    # # print(sma)
+    # print(main_signal.signal_observation_calendar)
+    # print(main_signal.eligibility_df)
+    # dates2 = pd.date_range(start='2010', periods=10)
+    # main_signal.signal_observation_calendar = dates2
+    # print(main_signal.signal_observation_calendar)
+    # print(main_signal.eligibility_df)
+    # main_signal.signal_observation_calendar = None
+    # print(main_signal.signal_observation_calendar)
+
+    # -------------------------------------
+    # vol ranking
+    from datetime import date
+    start_date = date(2007, 1, 1)
+    end_date = date.today()  # datetime(2019, 12, 30)
+    rebalance_frequency = '30D'
+    rebalance_calendar = pd.bdate_range(start=start_date, end=end_date, freq=rebalance_frequency)
+    vol_rank_signal = VolatilityRankSignal((20, 60), ticker_list=tickers, total_return=False,
+                                           rank_number=1)
+    vol_rank_signal.vol_lag = 10, 30
+    vol_rank_signal.signal_observation_calendar = rebalance_calendar
+    print(vol_rank_signal.get_signal_df())
+
+
 
 
 if __name__ == '__main__':
