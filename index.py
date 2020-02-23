@@ -35,10 +35,10 @@ class Basket:
     def basket_prices(self, start_date: {date, datetime}=None, end_date: {date, datetime}=None):
         financial_database_handler = FinancialDatabase(self.database_name, False)
         if self.total_return:
-            return financial_database_handler.get_close_price_df(self.tickers, start_date, end_date, self.currency)
-        else:
             return financial_database_handler.get_total_return_df(self.tickers, start_date, end_date, self.dividend_tax,
                                                                   self.currency)
+        else:
+            return financial_database_handler.get_close_price_df(self.tickers, start_date, end_date, self.currency)
 
     # ------------------------------------------------------------------------------------------------------------------
     # getter and setter methods
