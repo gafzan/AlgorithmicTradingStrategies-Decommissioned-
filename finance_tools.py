@@ -128,7 +128,7 @@ def _calculate_performance(weight_price_df: pd.DataFrame) -> pd.DataFrame:
 def index_calculation(price_df: pd.DataFrame, weight_df: pd.DataFrame, transaction_cost: float = 0, fee: float = 0,
                       initial_amount: float = 100.0) -> pd.DataFrame:
     """Assumes price_df and weight_df are both DataFrames that have the same column headers, transaction_cost and fee 
-    are floats. Returns an index as a Series object."""
+    are floats. Returns an index as a DataFrame."""
     if transaction_cost < 0:
         raise ValueError('transaction_cost needs to be equal or greater to 0.')
     weight_price_df = _check_and_merge_price_weight_df(price_df, weight_df)
