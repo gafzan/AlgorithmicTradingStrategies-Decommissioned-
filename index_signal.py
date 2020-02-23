@@ -127,15 +127,13 @@ class _PriceBasedSignal(Signal):
                                                                                             start_date,
                                                                                             end_date, self.currency)
 
-
     def get_signal_df(self) -> pd.DataFrame:
         if self.signal_observation_calendar is None:
             raise RuntimeError('Need to assign signal_observation_calendar before calculating signal')
         # assign a price DataFrame if applicable
         if self._underlying_price_df is None:
             self._set_underlying_price_df()
-        # then do the eligibility filter and calculate the signal
-        eligibility_df = self._get_eligibility_df()
+        eligibility_df = self._get_eligibility_df()  # then do the eligibility filter and calculate the signal
         return self._calculate_signal(eligibility_df)
 
     # ------------------------------------------------------------------------------------------------------------------
@@ -263,10 +261,7 @@ class VolatilityRankSignal(_PriceBasedRankSignal):
 
     def _calculate_signal(self, eligibility_df: pd.DataFrame):
         """Calculates the realized volatility and then performs the ranking signal."""
-        print(self._underlying_price_df.index[0])
         volatility_df = realized_volatility(self._underlying_price_df, *self.vol_lag)
-        print(volatility_df['2006-12-25':])
-        # print(volatility_df['2006-12-25':])
         volatility_df = select_rows_from_dataframe_based_on_sub_calendar(volatility_df,
                                                                          eligibility_df.index)
         volatility_df *= eligibility_df.replace(0, np.nan)  # based on eligibility_df, if 0 replace volatility with nan.
@@ -330,45 +325,4 @@ class SimpleMovingAverageCrossSignal(_PriceBasedSignal):
             self._lagging_window = int(max(leading_lagging_window))
             self._leading_lagging_window = leading_lagging_window
             self._bday_before_start_date_buffer = self._lagging_window + 10
-
-
-def main():
-    tickers = ["SAND.ST", "HM-B.ST", "AAK.ST"]
-    tickers = ["SAND.ST", "AAK.ST"]
-    dates = pd.date_range(start='2010', periods=50)
-    # main_signal = SimpleMovingAverageCrossSignal((1, 10), tickers)
-    # main_signal.signal_observation_calendar = dates
-    # sma = main_signal.get_signal_df()
-    # # print(sma)
-    # print(main_signal.signal_observation_calendar)
-    # print(main_signal.eligibility_df)
-    # dates2 = pd.date_range(start='2010', periods=10)
-    # main_signal.signal_observation_calendar = dates2
-    # print(main_signal.signal_observation_calendar)
-    # print(main_signal.eligibility_df)
-    # main_signal.signal_observation_calendar = None
-    # print(main_signal.signal_observation_calendar)
-
-    # -------------------------------------
-    # vol ranking
-    from datetime import date
-    start_date = date(2007, 1, 1)
-    end_date = date.today()  # datetime(2019, 12, 30)
-    rebalance_frequency = '30D'
-    rebalance_calendar = pd.bdate_range(start=start_date, end=end_date, freq=rebalance_frequency)
-    vol_rank_signal = VolatilityRankSignal((20, 60), ticker_list=tickers, total_return=False,
-                                           rank_number=1)
-    vol_rank_signal.vol_lag = 10, 30
-    vol_rank_signal.signal_observation_calendar = rebalance_calendar
-    print(vol_rank_signal.get_signal_df())
-
-
-
-
-if __name__ == '__main__':
-    main()
-
-
-
-
 

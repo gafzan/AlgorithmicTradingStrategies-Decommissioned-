@@ -204,24 +204,3 @@ class VolatilityWeight(_ProportionalValueWeight):
 
     def __repr__(self):
         return "<VolatilityWeight(inversely = {}, measurement lag = {} days)>".format(self.inversely, self.volatility_lag)
-
-
-def is_weight_subclass_instance(obj):
-    return issubclass(type(obj), _Weight)
-
-
-def main():
-
-    # Signal
-    calendar = pd.bdate_range(start='2010-01-10', end='2019-01-10', freq='M')
-    tickers = ['AAK.ST', 'ABB.ST']
-    sma_signal = SimpleMovingAverageCrossSignal((1, 50), tickers, calendar)
-
-    main_static_weight = StaticWeight()
-    print(sma_signal.get_signal_df())
-    main_static_weight.signal_df = sma_signal.get_signal_df()
-    print(main_static_weight.get_weights())
-
-
-if __name__ == '__main__':
-    main()

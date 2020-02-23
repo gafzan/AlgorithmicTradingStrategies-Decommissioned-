@@ -3,12 +3,11 @@ from pandas.tseries.offsets import BDay
 import numpy as np
 from datetime import date, datetime
 import logging
-import matplotlib.pyplot as plt
 
 # my own modules
 from financial_database import FinancialDatabase
 from index_signal import Signal
-from index_weight import _Weight, EqualWeight
+from index_weight import _Weight
 from finance_tools import index_calculation
 from dataframe_tools import select_rows_from_dataframe_based_on_sub_calendar
 
@@ -205,49 +204,4 @@ class Index(Basket):
         else:
             raise ValueError('initial_amount needs to be greater than zero.')
 
-
-def main():
-    tickers = ["SAND.ST", "HM-B.ST", "AAK.ST"]
-    rebalance_cal = pd.date_range(start='2010', periods=10, freq='M')
-    index_main = Index(tickers, rebalance_cal, total_return=True, dividend_tax=0.01, index_fee=-0.03)
-    index_main.weight = EqualWeight()
-    end_date = date(2010, 6, 3)
-    back_test = index_main.get_back_test(end_date=end_date)
-    print(back_test)
-
-    from financial_database import FinancialDatabase
-    from config_database import my_database_name
-    print(FinancialDatabase(my_database_name, False).get_close_price_df(tickers, rebalance_cal[0], end_date))
-    # back_test.plot()
-    # plt.show()
-
-
-def main_dates():
-    calendar_with_missing_dates = pd.date_range(start='2010', end='2011', freq='2D')
-    calendar = pd.date_range(start='2010', end='2011', freq='M')
-
-    # for each date complete_calendar, if the date does not exist in sub_cal, pick the next available date in sub_cal
-
-    date_is_in_cal = np.array(np.in1d(np.array(calendar.values, dtype='datetime64[D]'),
-                                      np.array(calendar_with_missing_dates.values, dtype='datetime64[D]')))
-    adjusted_date_list = []
-    for i in range(date_is_in_cal.size):
-        if date_is_in_cal[i]:
-            adjusted_date_list.append(calendar[i])
-        else:
-            adjusted_date_list.append(
-                max(calendar_with_missing_dates, key=lambda x: min((x - calendar[i]).days, 0))
-            )
-
-    for i in range(len(calendar)):
-        print(f'{i} old date: {calendar[i]}')
-        print(f'{i} NEW date: {adjusted_date_list[i]}\n')
-    for cal_date in calendar_with_missing_dates:
-        print(cal_date)
-
-    print(pd.DatetimeIndex(adjusted_date_list))
-
-
-if __name__ == '__main__':
-    main_dates()
 

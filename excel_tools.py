@@ -270,13 +270,3 @@ def format_risk_return_analysis_workbook(complete_workbook_path: str):
         weight_sheet.freeze_panes = 'B2'
 
     workbook.save(complete_workbook_path)
-
-
-def main():
-    path = r'C:\Users\gafza\PycharmProjects\AlgorithmicTradingStrategies\excel_data\performance data test - 2020-02-15.xlsx'
-    df_dict = format_risk_return_analysis_workbook(path)
-    save_df(list(df_dict.values()), "TEST error handling", path)
-
-
-if __name__ == '__main__':
-    main()
