@@ -3,6 +3,7 @@ from pathlib import Path
 import sys
 import os
 import logging
+import xlrd
 from openpyxl import load_workbook
 from openpyxl.styles.borders import Border, Side
 from openpyxl.styles import Alignment, Font, PatternFill, Color
@@ -62,10 +63,31 @@ def load_df(workbook_name: str, folder_path: str, sheet_name: str = 'Sheet1', fi
     if not xl_file_fullname.exists():
         print('No such file or directory!')
         sys.exit(-1)
-    if first_column_index:
-        data = pd.read_excel(xl_file_fullname, index_col=0, sheet_name=sheet_name)
-    else:
+    try:
         data = pd.read_excel(xl_file_fullname, sheet_name=sheet_name)
+    except xlrd.biffh.XLRDError:
+        # if the sheet name does not exist, ask the user to name one
+        workbook = load_workbook(xl_file_fullname)
+        if len(workbook.sheetnames) == 1:
+            logger.warning(f"'{sheet_name}' does not exist. Loading '{workbook.sheetnames[0]}' sheet since it is the only sheet in the workbook.")
+            data = pd.read_excel(xl_file_fullname, sheet_name=workbook.sheetnames[0])
+        else:
+            print(f"'{sheet_name}' does not exist. Chose one sheet from below:")
+            for sht_name in workbook.sheetnames:
+                print(f"{workbook.sheetnames.index(sht_name) + 1}: {sht_name}")
+            ask_user = True
+            while ask_user:
+                try:
+                    number = int(input(f"Input a number between 1 and {len(workbook.sheetnames)}: "))
+                    if number < 0:
+                        raise ValueError
+                    sheet_name = workbook.sheetnames[number - 1]
+                    ask_user = False
+                except (ValueError, IndexError):  # catch all errors
+                    pass
+            data = pd.read_excel(xl_file_fullname, sheet_name=sheet_name)
+    if first_column_index:
+        data.set_index(list(data)[0], inplace=True, drop=True)
     return data
 
 
