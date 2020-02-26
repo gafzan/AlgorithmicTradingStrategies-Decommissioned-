@@ -23,7 +23,7 @@ logger.addHandler(stream_handler)
 class Basket:
     """Class definition of Basket"""
 
-    database_name = r'sqlite:///C:\Users\gafza\PycharmProjects\AlgorithmicTradingStrategies\stock_db_v3'
+    database_name = r'sqlite:///[YOUR PATH FOLDER]'
 
     def __init__(self, tickers: {str, list}, currency: str = None, total_return: bool = False, dividend_tax: float = 0.0):
         self.tickers = tickers
