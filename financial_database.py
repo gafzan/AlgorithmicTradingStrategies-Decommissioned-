@@ -14,7 +14,7 @@ from dataframe_tools import select_rows_from_dataframe_based_on_sub_calendar
 
 # Logger
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 formatter = logging.Formatter('%(asctime)s : %(module)s : %(funcName)s : %(message)s')
 stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
@@ -78,7 +78,7 @@ class _StaticFinancialDatabase:
         Session = sessionmaker(bind=engine)  # ORM's 'handle' to the database (bound to the engine object)
         self._session = Session()
 
-    def resetting_database(self) -> None:
+    def reset_database(self) -> None:
         """Resets the database, meaning that contents in all tables will be deleted."""
         logger.info('Resetting database ({}).'.format(self.database_name))
         Base.metadata.drop_all(self.session.get_bind())
@@ -107,7 +107,7 @@ class FinancialDatabase(_StaticFinancialDatabase):
         """Assumes that tickers is either a string or a list of strings. Deletes all Underlying rows corresponding to
         the ticker(s). This will also remove all rows from tables that are subclasses to Underlying."""
         tickers = self.handle_ticker_input(tickers, convert_to_list=True)
-        logger.info("Deletes {} ticker(s) from the database.\nTickers: {}".format(len(tickers), tickers))
+        logger.info("Deleting {} ticker(s) from the database.\nTicker(s): %s" % ', '.format(len(tickers)) .join(tickers))
         for ticker in tickers:
             if self.underlying_exist(ticker):
                 query_underlying = self.session.query(Underlying).filter(Underlying.ticker == ticker).first()
@@ -123,10 +123,8 @@ class FinancialDatabase(_StaticFinancialDatabase):
         """Assumes that tickers is a list of strings and start_date and end_date are of type datetime. Deletes all rows
         in OpenPrice, HighPrice, LowPrice, ClosePrice, Volume and Dividend table for the given tickers from start_date
         to end_date."""
-        logger.debug("Deleting data for {} ticker(s) between {} and {}.\nTickers: {}".format(len(ticker_list),
-                                                                                             str(start_date)[:10],
-                                                                                             str(end_date)[:10],
-                                                                                             ticker_list))
+        logger.debug("Deleting data for {} ticker(s)" + logger_time_interval_message(start_date, end_date) +
+                     '\nTicker(s): %s' % ', '.join(ticker_list))
         table_list = [OpenPrice, HighPrice, LowPrice, ClosePrice, Volume, Dividend]
         ticker_underlying_id_dict = self.get_ticker_underlying_attribute_dict(ticker_list, Underlying.id)
         underlying_id_list = ticker_underlying_id_dict.values()
@@ -160,10 +158,8 @@ class FinancialDatabase(_StaticFinancialDatabase):
         if underlying_attribute_dict is None:
             underlying_attribute_dict = {}  # selection will be based on no attributes i.e. select all tickers
         underlying_attribute_list = underlying_attribute_dict.keys()
-
-        logger_message = 'Filtering tickers based on:'
-        for dict_key in underlying_attribute_list:
-            logger_message += "\n{} = {}".format(dict_key, underlying_attribute_dict[dict_key])
+        logger_message = "Filtering tickers based on: \n" + "\n".join(["{} = {}".format(key, value)
+                                                                       for key, value in underlying_attribute_dict.items()])
         logger.info(logger_message)
 
         # TODO need to split the request for large number of tickers
@@ -201,7 +197,7 @@ class FinancialDatabase(_StaticFinancialDatabase):
         observation date, 2) latest observation date with value, 3) oldest observation date and 4) first ex-dividend
         date (if any)."""
         logger.debug('Updating oldest and latest observation date and first ex-dividend date for {} ticker(s).'
-                     '\nTicker: {}'.format(len(tickers), tickers))
+                     '\nTicker(s): %s' % ', '.format(len(tickers)).join(tickers))
         underlying_id_list = self.get_ticker_underlying_attribute_dict(tickers, Underlying.id).values()
         ticker_counter = 0  # only used for the logger
         for underlying_id in underlying_id_list:
@@ -219,8 +215,8 @@ class FinancialDatabase(_StaticFinancialDatabase):
 
                     # find and record the first ex-dividend date
                     first_ex_div_date = query_dividend_amount_ex_dividend_date.order_by(Dividend.ex_div_date).first()[1]
-                    logger.debug("First ex-dividend date for {} was {}.".format(tickers[ticker_counter],
-                                                                                str(first_ex_div_date)[:10]))
+                    logger.debug("First ex-dividend date for {} is {}.".format(tickers[ticker_counter],
+                                                                               str(first_ex_div_date)[:10]))
                     query_underlying.first_ex_div_date = date(year=first_ex_div_date.year,
                                                               month=first_ex_div_date.month,
                                                               day=first_ex_div_date.day)
@@ -260,8 +256,7 @@ class FinancialDatabase(_StaticFinancialDatabase):
                 tickers_not_in_database.append(ticker)
         if len(tickers_not_in_database) > 0:
             raise ValueError(
-                "{} ticker(s) are missing from the database.\nTickers: {}".format(len(tickers_not_in_database),
-                                                                                  tickers_not_in_database))
+                "{} ticker(s) are missing from the database.\nTicker(s): %s" % ", ".format(len(tickers_not_in_database)).join(tickers_not_in_database))
         if start_date is None:
             # Pick the oldest observation date available
             start_date = min(
@@ -470,12 +465,13 @@ class _DynamicFinancialDatabase(FinancialDatabase):
         if len(tickers) == 0:  # no tickers to refresh or add data to
             return
 
-        ticker_latest_obs_date_dict = self.get_ticker_underlying_attribute_dict(tickers,
-                                                                                Underlying.latest_observation_date_with_values)
+        ticker_latest_obs_date_dict = self.get_ticker_underlying_attribute_dict(tickers, Underlying.latest_observation_date_with_values)
+
         if datetime.today().weekday() < 5:  # 0-6 represent the consecutive days of the week, starting from Monday.
             end_date = date.today()  # weekday
         else:
             end_date = date.today() - BDay(1)  # previous business day
+
         if None in ticker_latest_obs_date_dict.values():  # True if a ticker has no data: Load entire history!
             start_date = None
         else:
@@ -499,7 +495,7 @@ class _DynamicFinancialDatabase(FinancialDatabase):
         else:
             end_date = date.today() - BDay(1)  # previous business day
         for ticker in tickers.copy():
-            if not self.underlying_exist(ticker):
+            if last_obs_date_with_values_dict[ticker] is not None:
                 num_nan_days = (last_obs_date_with_values_dict[ticker] - last_obs_date_dict[ticker]).days
                 if last_obs_date_with_values_dict[ticker] == end_date:
                     tickers.remove(ticker)
@@ -611,9 +607,16 @@ class YahooFinancialDatabase(_DynamicFinancialDatabase):
         counter = 0
         for yf_ticker in yf_ticker_list:  # loop through each Yahoo Finance Ticker object
             if start_date is None:
-                yf_historical_data_df = yf_ticker.history(period='max')  # the maximum available data
+                if end_date is None:
+                    yf_historical_data_df = yf_ticker.history(period='max')  # the maximum available data
+                else:
+                    yf_historical_data_df = yf_ticker.history(period='max', end=end_date + timedelta(days=1))
             else:
-                yf_historical_data_df = yf_ticker.history(start=start_date, end=end_date + timedelta(days=1))
+                if end_date is None:
+                    yf_historical_data_df = yf_ticker.history(period='max', start=start_date)
+                else:
+                    yf_historical_data_df = yf_ticker.history(start=start_date, end=end_date + timedelta(days=1))
+            yf_historical_data_df = yf_historical_data_df[start_date:]  # handle case when start_date is a holiday
             # yf_historical_data_df contains Open, High, Low, Close, Volume, Dividends and Stock Splits
             dividend_df = yf_historical_data_df.reset_index()[['Date', 'Dividends']]  # extract dates and dividend
             dividend_amount_df = dividend_df[dividend_df['Dividends'] != 0]  # remove the rows with zero. Now the dates
