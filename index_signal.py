@@ -12,7 +12,7 @@ from config_database import my_database_name
 class Signal:
     """Class definition of Signal."""
 
-    financial_database_name = r'sqlite:///C:\Users\gafza\PycharmProjects\AlgorithmicTradingStrategies\stock_db_v3'
+    financial_database_name = r'sqlite:///[YOUR FOLDER PATH]'
 
     def __init__(self, ticker_list: list = None, signal_observation_calendar: pd.DatetimeIndex = None,
                  eligibility_df: pd.DataFrame = None):
