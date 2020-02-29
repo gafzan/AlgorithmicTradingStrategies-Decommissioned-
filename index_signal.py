@@ -12,8 +12,6 @@ from config_database import my_database_name
 class Signal:
     """Class definition of Signal."""
 
-    financial_database_name = r'sqlite:///[YOUR FOLDER PATH]'
-
     def __init__(self, ticker_list: list = None, signal_observation_calendar: pd.DatetimeIndex = None,
                  eligibility_df: pd.DataFrame = None):
         # either assign eligibility_df or ticker_list and signal_observation_calendar
