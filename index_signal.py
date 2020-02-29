@@ -2,11 +2,11 @@ import pandas as pd
 from pandas.tseries.offsets import BDay
 import numpy as np
 from financial_database import FinancialDatabase
-from excel_tools import save_df
 
 # my own modules
 from dataframe_tools import select_rows_from_dataframe_based_on_sub_calendar, check_if_values_in_dataframe_are_allowed
 from finance_tools import rolling_average, realized_volatility
+from config_database import my_database_name
 
 
 class Signal:
@@ -26,7 +26,7 @@ class Signal:
         else:
             raise ValueError("Need to assign ticker_list or only eligibility_df.")
         self._eligibility_df = eligibility_df
-        self._financial_database_handler = FinancialDatabase(self.financial_database_name, False)
+        self._financial_database_handler = FinancialDatabase(my_database_name, False)
 
     def get_signal_df(self) -> pd.DataFrame:
         if self.signal_observation_calendar is None:

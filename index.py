@@ -6,6 +6,7 @@ import logging
 
 # my own modules
 from financial_database import FinancialDatabase
+from config_database import my_database_name
 from index_signal import Signal
 from index_weight import _Weight
 from finance_tools import index_calculation
@@ -23,8 +24,6 @@ logger.addHandler(stream_handler)
 class Basket:
     """Class definition of Basket"""
 
-    database_name = r'sqlite:///C:\Users\gafza\PycharmProjects\AlgorithmicTradingStrategies\stock_db_v3'
-
     def __init__(self, tickers: {str, list}, currency: str = None, total_return: bool = False, dividend_tax: float = 0.0):
         self.tickers = tickers
         self.currency = currency
@@ -32,7 +31,7 @@ class Basket:
         self.dividend_tax = dividend_tax
 
     def basket_prices(self, start_date: {date, datetime}=None, end_date: {date, datetime}=None):
-        financial_database_handler = FinancialDatabase(self.database_name, False)
+        financial_database_handler = FinancialDatabase(my_database_name, False)
         if self.total_return:
             return financial_database_handler.get_total_return_df(self.tickers, start_date, end_date, self.dividend_tax,
                                                                   self.currency)
