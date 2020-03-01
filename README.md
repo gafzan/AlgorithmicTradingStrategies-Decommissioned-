@@ -23,4 +23,15 @@ Display informative plots of your results and saving it to an excel file for mor
 
 **Modules: excel_tools.py, financial_tools.py**
 
+---
+
+## License & copyright
+
+Licensed under [Apache License 2.0](LICENSE)
+
+
+
+
+
+
 
