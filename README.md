@@ -7,7 +7,7 @@ The signals (e.g. low volatility stocks and simple moving average crosses) and w
 
 The project has three main parts
 
-# 1. Financial database: 
+### 1. Financial database: 
 Handling underlying financial data such as OHLC prices, volumes and dividends in a database using SQLAlchemy ORM. 
 New data can be inserted using e.g. Yahoo Finance API (source).
 Modules: 
