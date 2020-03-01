@@ -1,7 +1,8 @@
-# AlgorithmicTradingStrategies
+# Algorithmic Trading Strategies
+**Version 1.0.0**
 This project aims to be a toolbox for testing and analysing algorithmic trading strategies. At the moment, it is not meant
-to be an automatic trading tool but rather be an enviroment where you can efficiently back test systematic trading strategies. The signals (e.g. low volatility 
-stocks) and weighting schemes available (e.g. equal weight) will be expanded over time.
+to be an automatic trading tool but rather be an enviroment where you can efficiently back test systematic trading strategies. 
+The signals (e.g. low volatility stocks and simple moving average crosses) and weighting schemes available (e.g. equal weight) will be expanded over time.
 
 1. Financial Database: Handling underlying financial data such as OHLC prices, volumes and dividends in a database using SQLAlchemy ORM. 
 New data can be inserted using e.g. Yahoo Finance API (source).
