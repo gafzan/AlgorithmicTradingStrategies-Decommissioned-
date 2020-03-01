@@ -24,7 +24,7 @@ Display informative plots of your results and saving it to an excel file for mor
 **Modules: excel_tools.py, financial_tools.py**
 
 ---
-
+<!--
 ## Tutorial part 1 - Managing the data
 
 ## Tutorial part 2 - Simple (and terrible) trading strategy
@@ -32,7 +32,7 @@ Display informative plots of your results and saving it to an excel file for mor
 ## Tutorial part 3 - Performance evaluation
 
 ## License & copyright
-
+-->
 Licensed under [Apache License 2.0](LICENSE)
 
 
