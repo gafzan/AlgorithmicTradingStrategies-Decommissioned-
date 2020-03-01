@@ -14,6 +14,7 @@ Handling underlying financial data such as OHLC prices, volumes and dividends in
 ### 2. Strategy back test
 Setting up a strategy by first choosing your investment universe from the databsase, perform initial filters 
 such as liquidity, chosing a signal that decides your portfolio selection, picking a weighting mechanism for your strategy (e.g. equal weighting) and then finaly back test your strategy.
+
 **Modules: index_weight.py, index_signal.py, index.py**
 
 ### 3. Performance analysis
