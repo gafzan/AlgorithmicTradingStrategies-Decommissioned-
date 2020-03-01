@@ -24,9 +24,10 @@ Modules:
 excel_tools.py
 financial_tools.py
 
---
+---
 
 ## Contributors
 - Jonas Bergstrom <gafzan@gmail.com>
---
+
+---
 
