@@ -9,6 +9,7 @@ The project has three main parts: *financial database*, *strategy back test* and
 
 ### 1. Financial database 
 Handling underlying financial data such as OHLC prices, volumes and dividends in a database using SQLAlchemy ORM. Able to create or delete rows in the database. 
+
 **Modules: models_db.py, financial_database.py**
 
 ### 2. Strategy back test
@@ -19,6 +20,7 @@ such as liquidity, chosing a signal that decides your portfolio selection, picki
 
 ### 3. Performance analysis
 Display informative plots of your results and saving it to an excel file for more thorough analysis.
+
 **Modules: excel_tools.py, financial_tools.py**
 
 
