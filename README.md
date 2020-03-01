@@ -8,7 +8,7 @@ The signals (e.g. low volatility stocks and simple moving average crosses) and w
 The project has three main parts: *financial database*, *strategy back test* and *performance analysis*.
 
 ### 1. Financial database 
-Handling underlying financial data such as OHLC prices, volumes and dividends in a database using SQLAlchemy ORM. 
+Handling underlying financial data such as OHLC prices, volumes and dividends in a database using SQLAlchemy ORM. Able to create or delete rows in the database. 
 **Modules: models_db.py, financial_database.py**
 
 ### 2. Strategy back test
