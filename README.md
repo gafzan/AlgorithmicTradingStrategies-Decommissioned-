@@ -9,22 +9,15 @@ The project has three main parts: *financial database*, *strategy back test* and
 
 ### 1. Financial database 
 Handling underlying financial data such as OHLC prices, volumes and dividends in a database using SQLAlchemy ORM. 
-**Modules: 
-models_db.py
-financial_database.py**
+**Modules: models_db.py, financial_database.py**
 
 ### 2. Strategy back test
 Setting up a strategy by first choosing your investment universe from the databsase, perform initial filters 
 such as liquidity, chosing a signal that decides your portfolio selection, picking a weighting mechanism for your strategy (e.g. equal weighting) and then finaly back test your strategy.
-Modules:
-index_weight.py
-index_signal.py
-index.py
+**Modules: index_weight.py, index_signal.py, index.py**
 
 ### 3. Performance analysis
 Display informative plots of your results and saving it to an excel file for more thorough analysis.
-Modules:
-excel_tools.py
-financial_tools.py
+**Modules: excel_tools.py, financial_tools.py**
 
 
