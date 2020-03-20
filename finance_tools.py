@@ -28,23 +28,22 @@ def realized_volatility(price_df: pd.DataFrame, *vol_lag, annualized_factor: int
     return max_volatility_df
 
 
-def relative_sma(price_df: pd.DataFrame, sma_lag: int, data_availability_threshold: float = 0.9) -> pd.DataFrame:
+def relative_sma(price_df: pd.DataFrame, sma_lag: int, allowed_number_na: int = 5) -> pd.DataFrame:
     """Assumes price_df is a DataFrame filled with daily prices as values, tickers as column names and observation dates
-    as index. Assumes that measurement_interval and annualized_factor is int and data_availability_threshold is a float.
-    Returns a DataFrame with the simple moving average (SMA) divided by the spot."""
-    sma_df = rolling_average(price_df, sma_lag, data_availability_threshold)
+    as index. Assumes that sma_lag and allowed_number_na are int. Returns a DataFrame with the simple moving average
+    (SMA) divided by the spot."""
+    sma_df = rolling_average(price_df, sma_lag, allowed_number_na)
     relative_sma_df = sma_df / price_df.fillna(method='ffill')
     return relative_sma_df
 
 
-def rolling_average(data_df: pd.DataFrame, avg_lag: int, data_availability_threshold: float = 0.9) -> pd.DataFrame:
+def rolling_average(data_df: pd.DataFrame, avg_lag: int, allowed_number_na: int = 5) -> pd.DataFrame:
     """Assumes data_df is a DataFrame filled data as values, tickers as column names and observation dates
-    as index. Assumes that measurement_interval and annualized_factor is int and data_availability_threshold is a float.
+    as index. Assumes that avg_lag and allowed_number_na are int..
     Returns a DataFrame with the simple moving average (SMA)."""
     if avg_lag < 1:
         raise ValueError("avg_lag needs to be an 'int' larger or equal to 1")
-    minimum_measurement_points = int(data_availability_threshold * avg_lag)
-    rolling_avg = data_df.rolling(window=avg_lag, min_periods=minimum_measurement_points).mean()
+    rolling_avg = data_df.rolling(window=avg_lag, min_periods=allowed_number_na).mean()
     # before price starts publishing, value should be nan regardless of data_availability_threshold
     adjustment_df = data_df.fillna(method='ffill').rolling(window=avg_lag).mean().isnull()
     adjustment_df = np.where(adjustment_df, np.nan, 1)
@@ -211,6 +210,7 @@ def return_and_risk_analysis(underlying_price_df: pd.DataFrame, has_benchmark=Fa
     if has_benchmark and len(underlying_price_df.columns) != 2:
         raise ValueError("Price DataFrame needs to have only two columns: 1st is your strategy and the 2nd is your "
                          "benchmark. Currently the DataFrame has {} column(s).".format(len(underlying_price_df.columns)))
+    underlying_price_df = underlying_price_df.copy()
     underlying_price_df.dropna(inplace=True)  # drops each row if there exists a NaN in either column
     if start_date:
         underlying_price_df = underlying_price_df[start_date:]
