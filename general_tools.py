@@ -1,3 +1,6 @@
+"""
+general_tools.py
+"""
 from itertools import zip_longest
 
 # ______________________________________________________________________________________________________________________
@@ -83,4 +86,22 @@ def progression_bar(counter: int, goal: int) -> None:
     steps = length / goal
     print('[' + int(counter * steps) * '*' + int((goal - counter) * steps) * ' ' + ']  ' + progression_percentage_str
           + ' (' + str(counter) + ' / ' + str(goal) + ')')
+
+
+def user_picks_element_from_list(list_: list):
+    """Assumes that list_ is a list. Script will print a list of all the elements and then ask user to pick one.
+    Returns the chosen element."""
+    if len(list_) == 0:
+        raise ValueError('List is empty.')
+    for i in range(len(list_)):
+        print('{}: {}'.format(i + 1, list_[i]))
+    ask_user = True
+    while ask_user:
+        try:
+            list_index = int(input('Enter a number between 1 and {}:'.format(len(list_))))
+            assert 1 <= list_index <= len(list_)
+            ask_user = False
+        except (ValueError, AssertionError):
+            pass
+    return list_[list_index - 1]
 

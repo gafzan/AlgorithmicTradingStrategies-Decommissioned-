@@ -1,3 +1,6 @@
+"""
+financial_database.py
+"""
 from sqlalchemy import create_engine, and_
 from sqlalchemy.orm import sessionmaker
 import logging
@@ -9,7 +12,7 @@ import numpy as np
 
 # my own modules
 from models_db import Base, Underlying, OpenPrice, HighPrice, LowPrice, ClosePrice, Volume, Dividend
-from general_tools import capital_letter_no_blanks, list_grouper, extend_dict, reverse_dict, progression_bar
+from general_tools import capital_letter_no_blanks, list_grouper, extend_dict, reverse_dict, progression_bar, user_picks_element_from_list
 from dataframe_tools import select_rows_from_dataframe_based_on_sub_calendar
 
 # Logger
@@ -732,4 +735,18 @@ def logger_time_interval_message(start_date: {date, datetime}, end_date: {date, 
         logger_message += ' up to {}'.format(str(end_date)[:10])
     logger_message += '.'
     return logger_message
+
+
+def main():
+    first_actions = {'Load tickers': ['From URL', 'From excel', 'Manually'],
+                     'Refresh tickers': ['Manually', 'Using an Underlying.attribute dictionary'],
+                     'Delete tickers': ['Manually', 'Using an Underlying.attribute dictionary']}
+
+
+    pass
+
+
+if __name__ == '__main__':
+    main()
+
 

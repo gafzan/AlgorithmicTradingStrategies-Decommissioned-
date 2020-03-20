@@ -1,3 +1,4 @@
 *.db
 volatility_ranking.py
+secrets.py
 
