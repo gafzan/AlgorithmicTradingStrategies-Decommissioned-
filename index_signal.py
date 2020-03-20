@@ -15,10 +15,10 @@ class Signal:
     def __init__(self, ticker_list: list = None, signal_observation_calendar: pd.DatetimeIndex = None,
                  eligibility_df: pd.DataFrame = None):
         # either assign eligibility_df or ticker_list and signal_observation_calendar
-        if not eligibility_df and ticker_list:
+        if eligibility_df is None and ticker_list is not None:
             self._ticker_list = ticker_list
             self._signal_observation_calendar = signal_observation_calendar
-        elif eligibility_df and not (ticker_list or signal_observation_calendar):
+        elif eligibility_df is not None and ticker_list is None and signal_observation_calendar is None:
             self._ticker_list = list(eligibility_df)
             self._signal_observation_calendar = eligibility_df.index
         else:
