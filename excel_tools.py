@@ -105,7 +105,7 @@ def load_df(workbook_name: str, folder_path: str, sheet_name: str = 'Sheet1', fi
     return data
 
 
-def excel_files_in_directory(directory: Union[Path, str]) -> list:
+def excel_files_in_directory(directory: {Path, str}) -> list:
     """Assumes that directory is a string showing the directory path. Returns a list of strings of the name of all files
     ending with '.xlsx'"""
     if isinstance(directory, str):
