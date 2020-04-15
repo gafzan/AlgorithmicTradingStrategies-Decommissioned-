@@ -3,6 +3,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import math
 from matplotlib import cm
+from string import ascii_letters
+import pandas as pd
+import seaborn as sns
+
 
 
 def realized_volatility(price_df: pd.DataFrame, *vol_lag, annualized_factor: int = 252, allowed_number_na: int = 5) \
@@ -71,6 +75,18 @@ def maximum_drawdown(price_df: pd.DataFrame, look_back_period: int = None) -> pd
     i.e. the lowest 'price' / 'maximum priced over look back period' - 1 observed."""
     drawdown_df = rolling_drawdown(price_df, look_back_period)
     return drawdown_df.min()
+
+
+def plot_pairwise_correlation(df: pd.DataFrame):
+    """ Source: https://seaborn.pydata.org/examples/many_pairwise_correlations.html"""
+    sns.set(style="white")
+    corr = df.corr()  # Compute the correlation matrix
+    mask = np.triu(np.ones_like(corr, dtype=np.bool))  # Generate a mask for the upper triangle
+    cmap = sns.diverging_palette(220, 10, as_cmap=True)  # Generate a custom diverging colormap
+    # Draw the heatmap with the mask and correct aspect ratio
+    sns.heatmap(corr, mask=mask, cmap=cmap, vmax=.3, center=0,
+                square=True, linewidths=.5, cbar_kws={"shrink": .5})
+    plt.show()
 
 
 def _check_and_merge_price_weight_df(price_df: pd.DataFrame, weight_df: pd.DataFrame) -> pd.DataFrame:
@@ -311,3 +327,4 @@ def plot_results(df_dict: {dict}):
     df_dict['Rolling 1Y return'].plot(grid=True, title='1Y return', colormap=cmap)
     performance_df.plot(grid=True, title='Performance', colormap=cmap)
     plt.show()
+
