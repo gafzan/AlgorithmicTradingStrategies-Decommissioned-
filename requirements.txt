@@ -1,8 +1,16 @@
 matplotlib
-numpy
-sqlalchemy
-openpyxl
-pandas
 pathlib
 xlrd
-yfinance
+pandas
+yfinance  # to access the Yahoo Finance API
+sqlalchemy  # for financial database module
+pywin32  # for excel formulas
+numpy
+xlsxwriter
+beautifulsoup4  # web scraping
+lxml  # web scraping (HTML parser)
+requests # web scraping
+openpyxl
+seaborn
+twilio>=6.0.0
+tkcalendar
