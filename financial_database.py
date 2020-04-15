@@ -9,11 +9,16 @@ from datetime import date, datetime, timedelta
 import pandas as pd
 from pandas.tseries.offsets import BDay
 import numpy as np
+from tkinter import filedialog
 
 # my own modules
 from models_db import Base, Underlying, OpenPrice, HighPrice, LowPrice, ClosePrice, Volume, Dividend
 from general_tools import capital_letter_no_blanks, list_grouper, extend_dict, reverse_dict, progression_bar, user_picks_element_from_list
 from dataframe_tools import select_rows_from_dataframe_based_on_sub_calendar
+from config_database import my_database_name
+from yahoo_finance_web_scraping import retrieve_tickers_from_yahoo
+from excel_tools import load_df, choose_excel_file_from_folder
+from secrets import excel_ticker_folder
 
 # Logger
 logger = logging.getLogger(__name__)
@@ -126,24 +131,21 @@ class FinancialDatabase(_StaticFinancialDatabase):
         """Assumes that tickers is a list of strings and start_date and end_date are of type datetime. Deletes all rows
         in OpenPrice, HighPrice, LowPrice, ClosePrice, Volume and Dividend table for the given tickers from start_date
         to end_date."""
-        logger.debug("Deleting data for {} ticker(s)" + logger_time_interval_message(start_date, end_date) +
+        logger.debug("Deleting data for {} ticker(s)".format(len(ticker_list)) + logger_time_interval_message(start_date, end_date) +
                      '\nTicker(s): %s' % ', '.join(ticker_list))
         table_list = [OpenPrice, HighPrice, LowPrice, ClosePrice, Volume, Dividend]
         ticker_underlying_id_dict = self.get_ticker_underlying_attribute_dict(ticker_list, Underlying.id)
         underlying_id_list = ticker_underlying_id_dict.values()
+        end_date = datetime(year=end_date.year, month=end_date.month, day=end_date.day)  # convert to datetime (
         for table in table_list:
             if table == Dividend:  # in case of Dividend table use 'ex-dividend date'
-                date_between_start_and_end = table.ex_div_date.between(start_date, end_date)
-            else:  # else use observation date
-                date_between_start_and_end = table.obs_date.between(start_date, end_date)
+                date_between_start_and_end = and_(table.ex_div_date >= start_date, table.ex_div_date <= end_date)
+            else:
+                date_between_start_and_end = and_(table.obs_date >= start_date, table.obs_date <= end_date)
             # for each underlying id, query the data that exists between the start and end date and remove the content
             for underlying_id_sub_list in list_grouper(underlying_id_list, 500):
                 self._session.query(table)\
-                    .filter(
-                    and_(
-                        table.underlying_id.in_(underlying_id_sub_list),
-                        date_between_start_and_end)
-                )\
+                    .filter(and_(table.underlying_id.in_(underlying_id_sub_list), date_between_start_and_end))\
                     .delete(synchronize_session=False)
         self.session.commit()
         self._update_obs_date_and_dividend_history_status(ticker_list)
@@ -194,6 +196,31 @@ class FinancialDatabase(_StaticFinancialDatabase):
                 .order_by(Underlying.ticker)
             ticker_attribute_dict = extend_dict(ticker_attribute_dict, dict(query_ticker_attribute))
         return ticker_attribute_dict
+
+    def get_underlying_data(self, tickers: {str, list}, attribute: {str, list, tuple}) -> pd.DataFrame:
+        """
+        Returns a DataFrame with the underlying attributes for each ticker in the list.
+        :param tickers: string or iterable of strings with the tickers
+        :param attribute: string or iterable of strings with the names of the attributes e.g. 'sector'
+        :return: pd.DataFrame
+        """
+        result_df = None
+        tickers = self.handle_ticker_input(tickers, convert_to_list=True)
+        if isinstance(attribute, str):
+            attribute = [attribute]
+        for attr in attribute:
+            # for all attributes, store the value next to the ticker in a DataFrame
+            ticker_attribute_dict = self.get_ticker_underlying_attribute_dict(tickers, attr)
+            result_sub_df = pd.DataFrame(ticker_attribute_dict, index=range(1))
+            result_sub_df = result_sub_df.unstack().reset_index()
+            result_sub_df.drop('level_1', inplace=True, axis=1)  # remove unnecessary column
+            result_sub_df.columns = ['ticker', attr]
+            if result_df is None:
+                result_df = result_sub_df
+            else:
+                # concatenate the DataFrame
+                result_df = pd.merge(result_df, result_sub_df, on='ticker')
+        return result_df
 
     def _update_obs_date_and_dividend_history_status(self,  tickers: list) -> None:
         """Assumes tickers is a list of strings. For each ticker, method assign to the Underlying table 1) latest
@@ -259,7 +286,7 @@ class FinancialDatabase(_StaticFinancialDatabase):
                 tickers_not_in_database.append(ticker)
         if len(tickers_not_in_database) > 0:
             raise ValueError(
-                "{} ticker(s) are missing from the database.\nTicker(s): %s" % ", ".format(len(tickers_not_in_database)).join(tickers_not_in_database))
+                "{} ticker(s) are missing from the database.\nTicker(s): %s".format(len(tickers_not_in_database)) % ", ".join(tickers_not_in_database))
         if start_date is None:
             # Pick the oldest observation date available
             start_date = min(
@@ -565,7 +592,7 @@ class _DynamicFinancialDatabase(FinancialDatabase):
 
 
 class YahooFinancialDatabase(_DynamicFinancialDatabase):
-    """Class definition of YahooFinancialDatabase
+    """Class definition of YahooFinancialDatabase.
     Using the Yahoo Finance API, this class an add and create data to the database."""
 
     def _populate_underlying_table(self, ticker_list: list) -> None:
@@ -654,17 +681,16 @@ class YahooFinancialDatabase(_DynamicFinancialDatabase):
         yf_historical_data_unstacked_df = yf_historical_data_df.unstack().reset_index()
         if len(ticker_list) == 1:  # add the ticker if there is only one ticker (gets removed by default)
             yf_historical_data_unstacked_df.insert(loc=1, column='ticker', value=ticker_list[0])
+        yf_historical_data_unstacked_df.columns = ['data_type', 'ticker', 'obs_date', 'value']
         # convert back the tickers from Yahoo Finance format
         # first create a dictionary with tickers with and without the Yahoo Finance format
         ticker_yahoo_finance_format_dict = dict(zip(self.convert_ticker_to_yahoo_finance_format(ticker_list), ticker_list))
-        # remove the tickers that does not need replacement
+        # remove the tickers that does not need replacement (when they are the same i.e. key = value)
         ticker_yahoo_finance_format_dict = {key: value for key, value in ticker_yahoo_finance_format_dict.items()
                                             if key != value}
-        yf_historical_data_unstacked_df.replace({'ticker': ticker_yahoo_finance_format_dict})
-        yf_historical_data_unstacked_df.columns = ['data_type', 'ticker', 'obs_date', 'value']
-
+        yf_historical_data_unstacked_df = yf_historical_data_unstacked_df.replace({'ticker': ticker_yahoo_finance_format_dict})
         # add comment and name of data source
-        yf_historical_data_unstacked_df['comment'] = 'Loaded at {}'.format(str(date.today()))
+        yf_historical_data_unstacked_df['comment'] = 'Loaded at {}'.format(str(datetime.today())[:19])
         yf_historical_data_unstacked_df['data_source'] = 'YAHOO_FINANCE'
 
         # replace the tickers with the corresponding underlying id
@@ -738,15 +764,85 @@ def logger_time_interval_message(start_date: {date, datetime}, end_date: {date, 
 
 
 def main():
-    first_actions = {'Load tickers': ['From URL', 'From excel', 'Manually'],
-                     'Refresh tickers': ['Manually', 'Using an Underlying.attribute dictionary'],
-                     'Delete tickers': ['Manually', 'Using an Underlying.attribute dictionary']}
+    # initialize a financial database handler
+    financial_db_handler = YahooFinancialDatabase(database_name=my_database_name)
+
+    # these are the actions and subsequent actions that the user can chose to do
+    # 1) what to do with the tickers and then how to retrieve them
+    actions = {'Add tickers to database': ['From URL', 'From excel', 'Manually'],
+               'Refresh tickers': ['Manually', 'Using an Underlying.attribute dictionary'],
+               'Delete tickers': ['Manually', 'Using an Underlying.attribute dictionary']}
+
+    # chose what to do with the database
+    first_choice = user_picks_element_from_list(list(actions.keys()))
+    second_choice = user_picks_element_from_list(actions[first_choice])
+
+    # retrieve the tickers as a list of strings
+    if second_choice == 'Manually':
+        tickers = input('\nEnter ticker(s) and separate them with a comma (,): ')
+        tickers = ''.join(tickers.split()).split(',')  # remove all blank spaces and separate each substring with comma
+    elif second_choice == 'From URL':
+        print("\nThe tickers are scraped from Yahoo Finance. You can create a stock screen from <https://finance.yahoo."
+              "com/screener/new>\nwhere you can chose e.g. the country and market capitalization.\nThen press 'Find "
+              "Stocks' and you will see a list of stocks in your browser. Copy-paste that URL below.")
+        url = input('\nEnter URL: ')
+        tickers = retrieve_tickers_from_yahoo(url)
+    elif second_choice == 'From excel':
+        print("\nMake sure the spreadsheet has a column named 'Yahoo'.")
+        excel_file_name = choose_excel_file_from_folder(excel_ticker_folder)
+        ticker_df = load_df(excel_file_name, excel_ticker_folder, first_column_index=False)
+        tickers = list(ticker_df['Yahoo'].values)
+    else:
+        ask_user = True
+        underlying_attribute_dict = {}
+        while ask_user:
+            enter_attribute = True
+            while enter_attribute:
+                underlying_attribute = input("\nEnter underlying attribute (e.g. 'sector'): ")
+                if underlying_attribute in list(Underlying.__dict__.keys()):
+                    enter_attribute = False
+                else:
+                    print("'{}' is not an attribute of Underlying.".format(underlying_attribute))
+            underlying_attribute_value = input("Enter values for '{}' separated by a comma "
+                                               "(all blanks will be replaced by '_'): ".format(underlying_attribute))
+            underlying_attribute_value = underlying_attribute_value.split(',')
+            underlying_attribute_value = capital_letter_no_blanks(underlying_attribute_value)
+            underlying_attribute_sub_dict = {getattr(Underlying, underlying_attribute): underlying_attribute_value}
+            print(underlying_attribute_sub_dict)
+            underlying_attribute_dict.update(underlying_attribute_sub_dict)
+            print('Current filter is as below:')
+            for key, value in underlying_attribute_dict.items():
+                print("{} = %s".format(key) % ','.join(value))
+            new_action = user_picks_element_from_list(['Add a new attribute for the filter', 'Done'])
+            if new_action == 'Done':
+                ask_user = False
+        tickers = financial_db_handler.get_ticker(underlying_attribute_dict)
+
+    # perform download, refresh or deletion of the tickers
+    if first_choice == 'Delete tickers':
+        print('You are about to delete {} ticker(s).\n%s'.format(len(tickers)) % ','.join(tickers))
+        confirmation = user_picks_element_from_list(['Cancel', 'Delete'])
+        if confirmation == 'Delete':
+            financial_db_handler.delete_underlying(tickers)
+    else:
+        counter = 1
+        for ticker_sub_list in list_grouper(tickers, 15):
+            print(f'Batch #{counter}')
+            if first_choice == 'Add tickers to database':
+                financial_db_handler.add_underlying(ticker_sub_list)
+            elif first_choice == 'Refresh tickers':
+                financial_db_handler.refresh_data_for_tickers(ticker_sub_list)
+            counter += 1
 
 
-    pass
+def main_test():
+    fin_db = FinancialDatabase(my_database_name)
+    ticker = ['mcd', 'gs', '^gspc']
+    data = fin_db.get_underlying_data(ticker, ('sector', 'industry', 'long_name'))
+    print(data)
 
 
 if __name__ == '__main__':
-    main()
+    main_test()
 
 
