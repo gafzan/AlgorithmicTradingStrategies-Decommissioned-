@@ -1,0 +1,8 @@
+matplotlib
+numpy
+sqlalchemy
+openpyxl
+pandas
+pathlib
+xlrd
+yfinance
