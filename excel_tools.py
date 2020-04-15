@@ -128,7 +128,7 @@ def choose_excel_file_from_folder(folder_path: str) -> str:
     while ask_user:
         try:
             number = int(input('Enter a number between 1 and {}:'.format(counter)))
-            assert 1 > number or number > counter
+            assert 1 <= number <= counter
             ask_user = False
         except (ValueError, AssertionError):
             pass
