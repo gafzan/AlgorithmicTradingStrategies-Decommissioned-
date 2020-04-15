@@ -4,7 +4,6 @@ excel_tools.py
 import logging
 import sys
 from pathlib import Path
-from typing import Union
 
 import pandas as pd
 import xlrd
