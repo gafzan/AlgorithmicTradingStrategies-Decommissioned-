@@ -9,16 +9,15 @@ from datetime import date, datetime, timedelta
 import pandas as pd
 from pandas.tseries.offsets import BDay
 import numpy as np
-from tkinter import filedialog
+from tkinter import filedialog, Tk
+import xlrd
 
 # my own modules
 from models_db import Base, Underlying, OpenPrice, HighPrice, LowPrice, ClosePrice, Volume, Dividend
-from general_tools import capital_letter_no_blanks, list_grouper, extend_dict, reverse_dict, progression_bar, user_picks_element_from_list
+from general_tools import capital_letter_no_blanks, list_grouper, extend_dict, reverse_dict, progression_bar
 from dataframe_tools import select_rows_from_dataframe_based_on_sub_calendar
-from config_database import my_database_name
-from yahoo_finance_web_scraping import retrieve_tickers_from_yahoo
-from excel_tools import load_df, choose_excel_file_from_folder
-from secrets import excel_ticker_folder
+from config_database import my_database_name, excel_files_to_feed_database_folder
+from excel_tools import load_df
 
 # Logger
 logger = logging.getLogger(__name__)
@@ -29,10 +28,9 @@ stream_handler.setFormatter(formatter)
 logger.addHandler(stream_handler)
 
 
-class _StaticFinancialDatabase:
-    """Class definition of _StaticFinancialDatabase
-    No functionality for creating, reading or updating data. However, you can reset the database thus deleting
-    all its content."""
+class FinancialDatabase:
+    """Class definition for FinancialDatabase.
+    This class allows for reading and deleting data but not for creating or updating data."""
 
     def __init__(self, database_name: str, database_echo=False):
         self._database_name = database_name
@@ -41,65 +39,7 @@ class _StaticFinancialDatabase:
         Base.metadata.create_all(engine)  # create the database tables (these are empty at this stage)
         Session = sessionmaker(bind=engine)  # ORM's 'handle' to the database (bound to the engine object)
         self._session = Session()  # whenever you need to communicate with the database you instantiate a Session
-
-    @staticmethod
-    def handle_ticker_input(ticker: {str, list}, convert_to_list=False, sort=False) -> {str, list}:
-        """Assumes that ticker is either a string or a list and convert_to_list is bool. Returns a string or a list
-        of strings where all the strings have capital letters and blanks have been replaced with '_'."""
-        ticker = capital_letter_no_blanks(ticker)
-        if isinstance(ticker, list) and sort:
-            ticker.sort()
-        if isinstance(ticker, str) and convert_to_list:
-            ticker = [ticker]
-        return ticker
-
-    # ------------------------------------------------------------------------------------------------------------------
-    # get set functionality
-
-    # session is read-only
-    @property
-    def session(self):
-        return self._session
-
-    @property
-    def database_name(self):
-        return self._database_name
-
-    @property
-    def database_echo(self):
-        return self._database_echo
-
-    # when either database_name or database_echo changes, the session attribute resets using the _set_session method
-    @database_name.setter
-    def database_name(self, database_name: str):
-        self._database = database_name
-        self._set_session()
-
-    @database_echo.setter
-    def database_echo(self, database_echo: bool):
-        self._database_echo = database_echo
-        self._set_session()
-
-    def _set_session(self) -> None:
-        engine = create_engine(self.database_name, self.database_echo)
-        Base.metadata.create_all(engine)  # Create the database tables (these are empty at this stage)
-        Session = sessionmaker(bind=engine)  # ORM's 'handle' to the database (bound to the engine object)
-        self._session = Session()
-
-    def reset_database(self) -> None:
-        """Resets the database, meaning that contents in all tables will be deleted."""
-        logger.info('Resetting database ({}).'.format(self.database_name))
-        Base.metadata.drop_all(self.session.get_bind())
-        Base.metadata.create_all(self.session.get_bind())
-        return
-
-    def __repr__(self):
-        return f"<_StaticFinancialDatabase(name = {self.database_name})>"
-
-
-class FinancialDatabase(_StaticFinancialDatabase):
-    """Class definition for FinancialDatabase.
-    This class allows for reading and deleting data but not for creating or updating data."""
+        self._delete_dates_between_start_end = True
 
     # ------------------------------------------------------------------------------------------------------------------
     # methods for Underlying table
@@ -107,15 +47,15 @@ class FinancialDatabase(_StaticFinancialDatabase):
     def underlying_exist(self, ticker: str) -> bool:
         """Assumes that ticker is a string. Returns True if there is an Underlying row that is represented by the
         ticker, else returns False."""
-        ticker = self.handle_ticker_input(ticker)
+        ticker = self.reformat_tickers(ticker)
         logger.debug("Checking for existence of the ticker '{}'.".format(ticker))
         return self.session.query(Underlying).filter(Underlying.ticker == ticker).count() > 0
 
     def delete_underlying(self, tickers: {str, list}) -> None:
         """Assumes that tickers is either a string or a list of strings. Deletes all Underlying rows corresponding to
         the ticker(s). This will also remove all rows from tables that are subclasses to Underlying."""
-        tickers = self.handle_ticker_input(tickers, convert_to_list=True)
-        logger.info("Deleting {} ticker(s) from the database.\nTicker(s): %s" % ', '.format(len(tickers)) .join(tickers))
+        tickers = self.reformat_tickers(tickers, convert_to_list=True)
+        logger.info("Deleting {} ticker(s) from the database.\nTicker(s): %s".format(len(tickers)) % ', '.join(tickers))
         for ticker in tickers:
             if self.underlying_exist(ticker):
                 query_underlying = self.session.query(Underlying).filter(Underlying.ticker == ticker).first()
@@ -126,29 +66,55 @@ class FinancialDatabase(_StaticFinancialDatabase):
         self.session.commit()
         return
 
-    def _delete_open_high_low_close_volume_dividend_data(self, ticker_list: list, start_date: {datetime, date},
-                                                         end_date: {datetime, date}) -> None:
+    def _delete_open_high_low_close_volume_dividend_data(self, table, ticker_list: list, date_list: list) -> None:
         """Assumes that tickers is a list of strings and start_date and end_date are of type datetime. Deletes all rows
         in OpenPrice, HighPrice, LowPrice, ClosePrice, Volume and Dividend table for the given tickers from start_date
         to end_date."""
-        logger.debug("Deleting data for {} ticker(s)".format(len(ticker_list)) + logger_time_interval_message(start_date, end_date) +
-                     '\nTicker(s): %s' % ', '.join(ticker_list))
-        table_list = [OpenPrice, HighPrice, LowPrice, ClosePrice, Volume, Dividend]
-        ticker_underlying_id_dict = self.get_ticker_underlying_attribute_dict(ticker_list, Underlying.id)
-        underlying_id_list = ticker_underlying_id_dict.values()
-        end_date = datetime(year=end_date.year, month=end_date.month, day=end_date.day)  # convert to datetime (
-        for table in table_list:
-            if table == Dividend:  # in case of Dividend table use 'ex-dividend date'
-                date_between_start_and_end = and_(table.ex_div_date >= start_date, table.ex_div_date <= end_date)
-            else:
-                date_between_start_and_end = and_(table.obs_date >= start_date, table.obs_date <= end_date)
+        if len(date_list) == 0:
+            logger.debug('No {} data to delete for {} ticker(s).'.format(table.__tablename__, len(ticker_list)))
+            return
+        else:
+            pass
+
+        underlying_id_list = self.get_ticker_underlying_attribute_dict(ticker_list, Underlying.id).values()
+        # for table in [OpenPrice, HighPrice, LowPrice, ClosePrice, Volume, Dividend]:
+
+        try:
+            date_variable_in_table = table.obs_date
+        except AttributeError:
+            # in case of Dividend table use 'ex-dividend date'
+            date_variable_in_table = table.ex_div_date
+
+        # make sure the dates are of type datetime
+        try:
+            date_list = [datetime(year=date_.year, month=date_.month, day=date_.day) for date_ in date_list]
+        except AttributeError:
+            date_list = [pd.to_datetime(date_) for date_ in date_list]
+
+        if self._delete_dates_between_start_end:
+            start_date = min(date_list)
+            end_date = max(date_list)
+            logger.debug("Deleting {} data for {} ticker(s)".format(table.__tablename__, len(ticker_list))
+                         + logger_time_interval_message(start_date, end_date) +
+                         '\nTicker(s): %s' % ', '.join(ticker_list))
+            dates_eligible_for_deletion = and_(date_variable_in_table >= start_date, date_variable_in_table <= end_date)
+            for underlying_id_sub_list in list_grouper(underlying_id_list, 500):
+                self._session.query(table) \
+                    .filter(and_(table.underlying_id.in_(underlying_id_sub_list), dates_eligible_for_deletion)) \
+                    .delete(synchronize_session=False)
+        else:
+            logger.debug("Deleting {} data for {} ticker(s) over {} observation dates."
+                         .format(table.__tablename__, len(ticker_list), len(date_list)) +
+                         '\nTicker(s): %s' % ', '.join(ticker_list))
             # for each underlying id, query the data that exists between the start and end date and remove the content
             for underlying_id_sub_list in list_grouper(underlying_id_list, 500):
-                self._session.query(table)\
-                    .filter(and_(table.underlying_id.in_(underlying_id_sub_list), date_between_start_and_end))\
-                    .delete(synchronize_session=False)
+                for date_sub_list in list_grouper(date_list, 100):
+                    self._session.query(table) \
+                        .filter(and_(table.underlying_id.in_(underlying_id_sub_list),
+                                     date_variable_in_table.in_(date_sub_list))) \
+                        .delete(synchronize_session=False)
         self.session.commit()
-        self._update_obs_date_and_dividend_history_status(ticker_list)
+        # self._update_obs_date_and_dividend_history_status(ticker_list)
 
     def get_ticker(self, underlying_attribute_dict: dict = None) -> list:
         """Assume that underlying_attribute_dict is a dictionary with Underlying.attribute_name (e.g. Underlying.sector)
@@ -185,7 +151,7 @@ class FinancialDatabase(_StaticFinancialDatabase):
         sqlalchemy.orm.attributes.InstrumentedAttribute (e.g. Underlying.sector will return a dictionary like
         {'ticker 1': 'sector A', 'ticker 2': 'sector B' ,...}).
         Returns a dictionary with tickers as keys and the specific attribute as values."""
-        tickers = self.handle_ticker_input(tickers, convert_to_list=True)
+        tickers = self.reformat_tickers(tickers, convert_to_list=True)
         ticker_attribute_dict = {}  # initializing the dictionary
 
         # to make the requests smaller, we need to split the ticker list into sub list
@@ -205,7 +171,7 @@ class FinancialDatabase(_StaticFinancialDatabase):
         :return: pd.DataFrame
         """
         result_df = None
-        tickers = self.handle_ticker_input(tickers, convert_to_list=True)
+        tickers = self.reformat_tickers(tickers, convert_to_list=True)
         if isinstance(attribute, str):
             attribute = [attribute]
         for attr in attribute:
@@ -227,7 +193,7 @@ class FinancialDatabase(_StaticFinancialDatabase):
         observation date, 2) latest observation date with value, 3) oldest observation date and 4) first ex-dividend
         date (if any)."""
         logger.debug('Updating oldest and latest observation date and first ex-dividend date for {} ticker(s).'
-                     '\nTicker(s): %s' % ', '.format(len(tickers)).join(tickers))
+                     '\nTicker(s): %s'.format(len(tickers)) % ', '.join(tickers))
         underlying_id_list = self.get_ticker_underlying_attribute_dict(tickers, Underlying.id).values()
         ticker_counter = 0  # only used for the logger
         for underlying_id in underlying_id_list:
@@ -250,22 +216,37 @@ class FinancialDatabase(_StaticFinancialDatabase):
                     query_underlying.first_ex_div_date = date(year=first_ex_div_date.year,
                                                               month=first_ex_div_date.month,
                                                               day=first_ex_div_date.day)
-            # check observation dates
+            # set the latest observation date
             query_obs_date = self.session.query(ClosePrice.obs_date).filter(ClosePrice.underlying_id == underlying_id)
-            query_obs_date_with_value = query_obs_date.filter(ClosePrice.close_quote.isnot(None))
-            latest_obs_date = query_obs_date.order_by(ClosePrice.obs_date.desc()).first()[0]
-            latest_obs_date_with_values = query_obs_date_with_value.order_by(ClosePrice.obs_date.desc()).first()[0]
-            logger.debug('Setting latest observation date for {} to {}.'.format(tickers[ticker_counter],
-                                                                                str(latest_obs_date)[:10]))
+            try:
+                latest_obs_date = query_obs_date.order_by(ClosePrice.obs_date.desc()).first()[0]
+                logger.debug('Setting latest observation date for {} to {}.'.format(tickers[ticker_counter],
+                                                                                    str(latest_obs_date)[:10]))
+            except TypeError:  # to handle 'NoneType' where object is not subscriptable
+                latest_obs_date = None
+                logger.warning('Failed to set latest observation date for {}.'.format(tickers[ticker_counter]))
             query_underlying.latest_observation_date = latest_obs_date
-            logger.debug('Setting latest observation date (with value) for {} to {}.'.format(tickers[ticker_counter],
-                                                                                             str(latest_obs_date)[:10]))
+
+            # set the latest observation date with value
+            query_obs_date_with_value = query_obs_date.filter(ClosePrice.close_quote.isnot(None))
+            try:
+                latest_obs_date_with_values = query_obs_date_with_value.order_by(ClosePrice.obs_date.desc()).first()[0]
+                logger.debug('Setting latest observation date with value for {} to {}.'.format(tickers[ticker_counter],
+                                                                                               str(latest_obs_date_with_values)[:10]))
+            except TypeError:  # to handle 'NoneType' where object is not subscriptable
+                latest_obs_date_with_values = None
+                logger.warning('Failed setting latest observation date with value for {}.'.format(tickers[ticker_counter]))
             query_underlying.latest_observation_date_with_values = latest_obs_date_with_values
-            if query_underlying.oldest_observation_date is None:
-                oldest_obs_date = query_obs_date.order_by(ClosePrice.obs_date).first()[0]
-                logger.debug('Setting oldest observation date (with value) for {} to {}.'.format(
-                    tickers[ticker_counter], str(oldest_obs_date)[:10]))
-                query_underlying.oldest_observation_date = oldest_obs_date
+
+            # setting oldest observation date
+            try:
+                oldest_obs_date = query_obs_date_with_value.order_by(ClosePrice.obs_date).first()[0]
+                logger.debug('Setting oldest observation date with value for {} to {}.'.format(tickers[ticker_counter],
+                                                                                               str(oldest_obs_date)[:10]))
+            except TypeError:  # to handle 'NoneType' where object is not subscriptable
+                oldest_obs_date = None
+                logger.warning('Faild setting oldest observation date with value for {}.'.format(tickers[ticker_counter]))
+            query_underlying.oldest_observation_date = oldest_obs_date
             ticker_counter += 1
         self.session.commit()
         return
@@ -273,33 +254,9 @@ class FinancialDatabase(_StaticFinancialDatabase):
     # ------------------------------------------------------------------------------------------------------------------
     # methods for OpenPrice, HighPrice, LowPrice, ClosePrice, Volume and Dividend tables
 
-    def _input_check(self, tickers: {str, list}, start_date: {date, datetime}, end_date: {date, datetime}) -> tuple:
-        """This method checks some of the inputs for _get_open_high_low_close_volume_dividend_df method. Returns a
-        tuple with the inputs that have been adjusted if applicable."""
-        # adjust inputs
-        tickers = self.handle_ticker_input(tickers, convert_to_list=True, sort=False)
-        if len(tickers) == 0:
-            raise TypeError('The ticker list was empty.')
-        tickers_not_in_database = []
-        for ticker in tickers:
-            if not self.underlying_exist(ticker):
-                tickers_not_in_database.append(ticker)
-        if len(tickers_not_in_database) > 0:
-            raise ValueError(
-                "{} ticker(s) are missing from the database.\nTicker(s): %s".format(len(tickers_not_in_database)) % ", ".join(tickers_not_in_database))
-        if start_date is None:
-            # Pick the oldest observation date available
-            start_date = min(
-                self.get_ticker_underlying_attribute_dict(tickers, Underlying.oldest_observation_date).values())
-        if end_date is None:
-            # Pick the latest observation date with data available
-            end_date = max(self.get_ticker_underlying_attribute_dict(tickers,
-                                                                     Underlying.latest_observation_date_with_values).values())
-        return tickers, start_date, end_date
-
     def _get_open_high_low_close_volume_dividend_df(self, table, tickers: {str, list}, start_date: {date, datetime},
                                                     end_date: {date, datetime}, currency: str)->pd.DataFrame:
-        tickers, start_date, end_date = self._input_check(tickers, start_date, end_date)
+        tickers, start_date, end_date = self._input_check_before_getting_ohlc_volume(tickers, start_date, end_date)
         logger.debug('Get {} data for {} ticker(s)'.format(table.__tablename__, len(tickers))
                      + logger_time_interval_message(start_date, end_date))
 
@@ -353,6 +310,30 @@ class FinancialDatabase(_StaticFinancialDatabase):
             return self._currency_convert_df(result_pivoted_df, currency)
         else:
             return result_pivoted_df
+
+    def _input_check_before_getting_ohlc_volume(self, tickers: {str, list}, start_date: {date, datetime}, end_date: {date, datetime}) -> tuple:
+        """This method checks some of the inputs for _get_open_high_low_close_volume_dividend_df method. Returns a
+        tuple with the inputs that have been adjusted if applicable."""
+        # adjust inputs
+        tickers = self.reformat_tickers(tickers, convert_to_list=True, sort=False)
+        if len(tickers) == 0:
+            raise TypeError('The ticker list was empty.')
+        tickers_not_in_database = []
+        for ticker in tickers:
+            if not self.underlying_exist(ticker):
+                tickers_not_in_database.append(ticker)
+        if len(tickers_not_in_database) > 0:
+            raise ValueError(
+                "{} ticker(s) are missing from the database.\nTicker(s): %s".format(len(tickers_not_in_database)) % ", ".join(tickers_not_in_database))
+        if start_date is None:
+            # Pick the oldest observation date available
+            start_date = min(
+                self.get_ticker_underlying_attribute_dict(tickers, Underlying.oldest_observation_date).values())
+        if end_date is None:
+            # Pick the latest observation date with data available
+            end_date = max(self.get_ticker_underlying_attribute_dict(tickers,
+                                                                     Underlying.latest_observation_date_with_values).values())
+        return tickers, start_date, end_date
 
     @staticmethod
     def _handle_missing_data(original_ticker_list: list, values_df: pd.DataFrame) -> pd.DataFrame:
@@ -453,17 +434,72 @@ class FinancialDatabase(_StaticFinancialDatabase):
             else:
                 return cum_total_return
 
+    # ------------------------------------------------------------------------------------------------------------------
+    # get set functionality and static methods
+
+    @staticmethod
+    def reformat_tickers(ticker: {str, list}, convert_to_list=False, sort=False) -> {str, list}:
+        """Assumes that ticker is either a string or a list and convert_to_list is bool. Returns a string or a list
+        of strings where all the strings have capital letters and blanks have been replaced with '_'."""
+        ticker = capital_letter_no_blanks(ticker)
+        if isinstance(ticker, list) and sort:
+            ticker.sort()
+        if isinstance(ticker, str) and convert_to_list:
+            ticker = [ticker]
+        return ticker
+
+    # session is read-only
+    @property
+    def session(self):
+        return self._session
+
+    @property
+    def database_name(self):
+        return self._database_name
+
+    @property
+    def database_echo(self):
+        return self._database_echo
+
+    # when either database_name or database_echo changes, the session attribute resets using the _set_session method
+    @database_name.setter
+    def database_name(self, database_name: str):
+        self._database = database_name
+        self._set_session()
+
+    @database_echo.setter
+    def database_echo(self, database_echo: bool):
+        self._database_echo = database_echo
+        self._set_session()
+
+    def _set_session(self) -> None:
+        engine = create_engine(self.database_name, self.database_echo)
+        Base.metadata.create_all(engine)  # Create the database tables (these are empty at this stage)
+        Session = sessionmaker(bind=engine)  # ORM's 'handle' to the database (bound to the engine object)
+        self._session = Session()
+
+    def reset_database(self) -> None:
+        """Resets the database, meaning that contents in all tables will be deleted."""
+        logger.info('Resetting database ({}).'.format(self.database_name))
+        Base.metadata.drop_all(self.session.get_bind())
+        Base.metadata.create_all(self.session.get_bind())
+        return
+
     def __repr__(self):
         return f"<FinancialDatabase(name = {self.database_name})>"
 
 
-class _DynamicFinancialDatabase(FinancialDatabase):
-    """Class definition for _DynamicFinancialDatabase. Adds functionality to create and update data."""
+class _DataFeeder(FinancialDatabase):
+    """Class definition for _DataFeeder. Adds functionality to create and update data."""
 
-    def add_underlying(self, tickers: {str, list}) -> None:
+    def __init__(self, database_name: str, database_echo=False):
+        super().__init__(database_name, database_echo)
+        self._data_table_list = [OpenPrice, HighPrice, LowPrice, ClosePrice, Volume, Dividend]
+
+    def add_underlying(self, tickers: {str, list}, refresh_data_after_adding_underlying: bool = True) -> None:
         """Assumes that ticker is either a string or a list of strings. For each ticker the script downloads the
         information of the underlying and its data and inserts it to the database."""
-        tickers = self.handle_ticker_input(tickers, convert_to_list=True)
+        tickers = self.reformat_tickers(tickers, convert_to_list=True)
         original_tickers = tickers.copy()
         logger.info("Attempts to populate the database with {} ticker(s).\nTicker: {}".format(len(original_tickers),
                                                                                               original_tickers))
@@ -480,13 +516,14 @@ class _DynamicFinancialDatabase(FinancialDatabase):
         logger.info("Populate the database with {} new ticker(s).\nTicker: {}".format(len(tickers), tickers))
 
         self._populate_underlying_table(tickers)
-        self.refresh_data_for_tickers(tickers)
+        if refresh_data_after_adding_underlying:
+            self.refresh_data_for_tickers(tickers)
         return
 
     def refresh_data_for_tickers(self, tickers: {str, list}) -> None:
         """Assumes that tickers is either a string or list of strings. Refreshes the OHLC, Volume and dividend data up
         to today."""
-        tickers = self.handle_ticker_input(tickers, convert_to_list=True)
+        tickers = self.reformat_tickers(tickers, convert_to_list=True)
         for ticker in tickers:  # check for existence. Only add or refresh data if ticker already exists
             if not self.underlying_exist(ticker):
                 raise ValueError("{} does not exist in the database.\nUse 'add_underlying(<ticker>) to add it to the "
@@ -494,23 +531,29 @@ class _DynamicFinancialDatabase(FinancialDatabase):
         tickers = self._control_tickers_before_refresh(tickers)  # some tickers might be de-listed...
         if len(tickers) == 0:  # no tickers to refresh or add data to
             return
-
-        ticker_latest_obs_date_dict = self.get_ticker_underlying_attribute_dict(tickers, Underlying.latest_observation_date_with_values)
-
-        if datetime.today().weekday() < 5:  # 0-6 represent the consecutive days of the week, starting from Monday.
-            end_date = date.today()  # weekday
-        else:
-            end_date = date.today() - BDay(1)  # previous business day
-
-        if None in ticker_latest_obs_date_dict.values():  # True if a ticker has no data: Load entire history!
-            start_date = None
-        else:
-            start_date = min(ticker_latest_obs_date_dict.values())
-            self._delete_open_high_low_close_volume_dividend_data(tickers, start_date, end_date)
+        start_date, end_date = self._get_start_end_dates_before_refresh(tickers)
         self._refresh_dividends(tickers, start_date, end_date)  # refresh dividends
         self._refresh_open_high_low_close_volume(tickers, start_date, end_date)  # refresh OHLC and Volume
         self._update_obs_date_and_dividend_history_status(tickers)  # update the dates
         return
+
+    def _get_start_end_dates_before_refresh(self, ticker_list: list)-> tuple:
+        """
+        Returns the start and end date for the refresh of OHLC, volume and dividends.
+        :param ticker_list: list of strings with tickers
+        :return: Returns a tuple containing start and end date
+        """
+        ticker_latest_obs_date_dict = self.get_ticker_underlying_attribute_dict(ticker_list, Underlying.latest_observation_date_with_values)
+        if datetime.today().weekday() < 5:  # 0-6 represent the consecutive days of the week, starting from Monday.
+            end_date = date.today()  # weekday
+        else:
+            end_date = date.today() - BDay(1)  # previous business day
+        if None in ticker_latest_obs_date_dict.values():  # True if a ticker has no data: Load entire history!
+            start_date = None
+        else:
+            start_date = min(ticker_latest_obs_date_dict.values())
+
+        return start_date, end_date
 
     def _control_tickers_before_refresh(self, tickers: list, number_of_nan_days_threshold: int = 14) -> list:
         """Assumes tickers is a list of strings and number_of_nan_days_threshold is an int. Returns a new list of tickers
@@ -549,6 +592,9 @@ class _DynamicFinancialDatabase(FinancialDatabase):
         logger.debug('Refresh dividends for {} ticker(s)'.format(len(ticker_list))
                      + logger_time_interval_message(start_date, end_date))
         dividend_df = self._retrieve_dividend_df(ticker_list, start_date, end_date)
+        unique_dates_eligible_to_deletion = list(set(list(dividend_df['ex_div_date'].values)))
+        self._delete_open_high_low_close_volume_dividend_data(table=Dividend, ticker_list=ticker_list,
+                                                              date_list=unique_dates_eligible_to_deletion)
         logger.debug('Append rows to the Dividend table in the database.')
         dividend_df.to_sql(Dividend.__tablename__, self._session.get_bind(), if_exists='append', index=False)
         logger.debug('Commit the new Dividend rows.')
@@ -565,17 +611,18 @@ class _DynamicFinancialDatabase(FinancialDatabase):
         logger.debug('Refresh OHLC and volume for {} ticker(s)'.format(len(ticker_list))
                      + logger_time_interval_message(start_date, end_date))
         open_high_low_close_volume_df = self._retrieve_open_high_low_close_volume_df(ticker_list, start_date, end_date)
+        data_table_ex_div_list = self._data_table_list.copy()
+        data_table_ex_div_list.remove(Dividend)
 
-        data_type_list = ['OPEN', 'HIGH', 'LOW', 'CLOSE', 'VOLUME']
-        value_name_list = [name.lower() + '_quote' for name in data_type_list]
-        table_name_list = [OpenPrice.__tablename__, HighPrice.__tablename__, LowPrice.__tablename__,
-                           ClosePrice.__tablename__, Volume.__tablename__]
-        for i in range(len(data_type_list)):
-            logger.debug("Append rows to the '{}' table in the database.".format(table_name_list[i]))
-            value_df = open_high_low_close_volume_df[open_high_low_close_volume_df['data_type'] == data_type_list[i]].copy()
+        for data_table in data_table_ex_div_list:
+            logger.debug("Append rows to the {} table in the database.".format(data_table.__tablename__))
+            value_df = open_high_low_close_volume_df[open_high_low_close_volume_df['data_type'] == data_table.__valuename__].copy()
+            unique_dates_eligible_to_deletion = list(set(list(value_df['obs_date'].values)))
+            self._delete_open_high_low_close_volume_dividend_data(table=data_table, ticker_list=ticker_list,
+                                                                  date_list=unique_dates_eligible_to_deletion)
             value_df.drop('data_type', axis=1, inplace=True)
-            value_df.rename(columns={'value': value_name_list[i]}, inplace=True)
-            value_df.to_sql(table_name_list[i], self.session.get_bind(), if_exists='append', index=False)
+            value_df.rename(columns={'value': data_table.__valuename__}, inplace=True)
+            value_df.to_sql(data_table.__tablename__, self.session.get_bind(), if_exists='append', index=False)
         logger.debug('Commit the new OHLC and Volume rows.')
         self.session.commit()
         return
@@ -591,9 +638,9 @@ class _DynamicFinancialDatabase(FinancialDatabase):
         return f"<_DynamicFinancialDatabase(name = {self.database_name})>"
 
 
-class YahooFinancialDatabase(_DynamicFinancialDatabase):
-    """Class definition of YahooFinancialDatabase.
-    Using the Yahoo Finance API, this class an add and create data to the database."""
+class YahooFinanceFeeder(_DataFeeder):
+    """Class definition of YahooFinanceFeeder.
+    Using the Yahoo Finance API, this class can add and create data to the database."""
 
     def _populate_underlying_table(self, ticker_list: list) -> None:
         yf_ticker_list = self.yahoo_finance_ticker(ticker_list)
@@ -704,7 +751,9 @@ class YahooFinancialDatabase(_DynamicFinancialDatabase):
             pd.notnull(yf_historical_data_unstacked_df['value'])].copy()  # remove rows with NaN in data column
         yf_historical_data_unstacked_clean_df = yf_historical_data_unstacked_clean_df[
             yf_historical_data_unstacked_clean_df['value'] != 0].copy()  # remove rows with 0 in data column
-        yf_historical_data_unstacked_clean_df['data_type'] = yf_historical_data_unstacked_clean_df['data_type'].str.upper()
+        yf_historical_data_unstacked_clean_df['data_type'] = yf_historical_data_unstacked_clean_df['data_type'].str.lower()
+        yf_historical_data_unstacked_clean_df = yf_historical_data_unstacked_clean_df[yf_historical_data_unstacked_clean_df['data_type'].isin(['open', 'high', 'low', 'close'])].copy()
+        yf_historical_data_unstacked_clean_df['data_type'] = yf_historical_data_unstacked_clean_df['data_type'].astype(str) + '_quote'
         return yf_historical_data_unstacked_clean_df[['data_type', 'obs_date', 'value', 'comment', 'data_source',
                                                       'underlying_id']]
 
@@ -753,6 +802,167 @@ class YahooFinancialDatabase(_DynamicFinancialDatabase):
         return f"<YahooFinancialDatabase(name = {self.database_name})>"
 
 
+class ExcelFeeder(_DataFeeder):
+    """Class definition of ExcelFeeder.
+    Loads data from an excel file and stores it in the database"""
+
+    def __init__(self, database_name: str, initialdir: str, database_echo=False):
+        super().__init__(database_name, database_echo)
+        self.initialdir = initialdir
+        self._eligible_sheet_names = [Underlying.__tablename__]
+        self._eligible_sheet_names.extend([data_table.__tablename__ for data_table in self._data_table_list])
+        self._eligible_col_names_underlying = ["ticker", "underlying_type", "long_name", "short_name", "sector", "industry", "country", "city", "address", "currency", "description", "web_site"]
+        self._dataframe_sheet_name_dict = {data_table.__tablename__: None for data_table in self._data_table_list}
+        self._dataframe_sheet_name_dict.update({Underlying.__tablename__: None})
+        self._delete_dates_between_start_end = False
+
+    def chose_excel_file_get_file_name(self)-> str:
+        Tk().withdraw()
+        return filedialog.askopenfile(initialdir=self.initialdir, title='Select excel file containing the underlying.').name
+
+    def load_data_from_excel(self):
+        file_path = self.chose_excel_file_get_file_name()
+        sheet_names = list(self._dataframe_sheet_name_dict.keys())
+        for sheet_name in sheet_names:  # loop through the eligible sheet names and save the DataFrames
+            try:
+                first_column_index = False if sheet_name == 'underlying' else True
+                loaded_df = load_df(full_path=file_path, sheet_name=sheet_name, first_column_index=first_column_index,
+                                    sheet_name_error_handling=False)
+                loaded_df = self._clean_loaded_dataframe(loaded_df, sheet_name)
+                self._dataframe_sheet_name_dict[sheet_name] = loaded_df
+            except xlrd.biffh.XLRDError:
+                logger.debug("Sheet '{}' did not exist.".format(sheet_name))
+                self._dataframe_sheet_name_dict[sheet_name] = None
+            except IndexError:
+                logger.debug("Sheet '{}' is empty.".format(sheet_name))
+                self._dataframe_sheet_name_dict[sheet_name] = None
+
+    def _clean_loaded_dataframe(self, loaded_df: pd.DataFrame, data_name: str)-> pd.DataFrame:
+        """
+        Performs a check on the DataFrame (format etc). The check can be different depending on the name.
+        :param loaded_df:
+        :param data_name:
+        :return:
+        """
+        default_str = 'NA'
+        if len(list(loaded_df.index)) == 0:
+            logger.debug("Sheet '{}' is empty.".format(data_name))
+            loaded_df = None
+        else:
+            if data_name == 'underlying':
+                loaded_df.replace(np.nan, default_str, regex=True, inplace=True)  # in case the attribute does not exist, use a default string
+                loaded_df = loaded_df[self._eligible_col_names_underlying].copy()  # only select the eligible column names
+
+                # capital letters and replace blanks with '_'
+                col_to_be_capitalized = ['ticker', 'underlying_type', 'sector', 'industry', 'currency', 'country', 'city']
+                loaded_df[col_to_be_capitalized] = loaded_df[col_to_be_capitalized].replace(to_replace=' ', value='_', regex=True)
+                loaded_df[col_to_be_capitalized] = loaded_df[col_to_be_capitalized].apply(lambda col: col.str.upper())
+            elif data_name in [data_table.__tablename__ for data_table in self._data_table_list]:
+                # make sure the index is an ascending DatetimeIndex
+                if type(loaded_df.index) != pd.DatetimeIndex:
+                    raise ValueError("index is not a DatetimeIndex for sheet '{}'".format(data_name))
+                elif not loaded_df.index.is_monotonic_increasing:
+                    raise ValueError("index is not monotonic increasing for sheet '{}'".format(data_name))
+                loaded_df.columns = self.reformat_tickers(list(loaded_df))  # reformat the column names (i.e. tickers)
+            else:
+                raise ValueError("Data name '{}' not recognized.".format(data_name))
+            logger.debug("Sheet '{}' loaded successfully.".format(data_name))
+        return loaded_df
+
+    def insert_data_to_database(self):
+        # populate the underlying table in the database using the specific DataFrame
+        if self._dataframe_sheet_name_dict['underlying'] is not None:
+            ticker_list = list(self._dataframe_sheet_name_dict['underlying']['ticker'].values)
+            self.add_underlying(ticker_list, refresh_data_after_adding_underlying=False)
+        else:
+            logger.info('No underlying to add from excel file.')
+
+        # get all the unique tickers that existed in each data frame
+        tickers = []  # initalizing the list of tickers
+        for sheet_name in [data_table.__tablename__ for data_table in self._data_table_list]:
+            df = self._dataframe_sheet_name_dict[sheet_name]
+            if df is not None:
+                tickers.extend(list(df))
+        tickers = self.reformat_tickers(tickers, convert_to_list=True)  # capital letters and _ instead of blanks
+        tickers = list(set(tickers))  # only unique tickers
+
+        for ticker in tickers:  # check for existence. Only add or refresh data if ticker already exists
+            if not self.underlying_exist(ticker):
+                raise ValueError("{} does not exist in the database.\nUse 'add_underlying(<ticker>) to add it to the "
+                                 "database'".format(ticker))
+        self._refresh_dividends(tickers, None, None)  # refresh dividends
+        self._refresh_open_high_low_close_volume(tickers, None, None)  # refresh OHLC and Volume
+        self._update_obs_date_and_dividend_history_status(tickers)  # update the dates
+
+    def refresh_data_for_tickers(self, tickers: {str, list}) -> None:
+        raise NotImplementedError("Can't refresh a given ticker if using ExcelFeeder object")
+
+    def _populate_underlying_table(self, ticker_list: list) -> None:
+        total_underlying_df = self._dataframe_sheet_name_dict['underlying']
+        underlying_df = total_underlying_df[total_underlying_df['ticker'].isin(ticker_list)].copy()
+        underlying_list = []
+        for ticker in ticker_list:
+            underlying = Underlying(ticker=ticker,
+                                    underlying_type=capital_letter_no_blanks(underlying_df['underlying_type'].values[0]),
+                                    long_name=underlying_df['long_name'].values[0],
+                                    short_name=underlying_df['short_name'].values[0],
+                                    sector=capital_letter_no_blanks(underlying_df['sector'].values[0]),
+                                    industry=capital_letter_no_blanks(underlying_df['industry'].values[0]),
+                                    currency=capital_letter_no_blanks(underlying_df['currency'].values[0]),
+                                    country=capital_letter_no_blanks(underlying_df['country'].values[0]),
+                                    city=capital_letter_no_blanks(underlying_df['city'].values[0]),
+                                    address=underlying_df['address'].values[0],
+                                    description=underlying_df['description'].values[0],
+                                    web_site=underlying_df['web_site'].values[0])
+            underlying_list.append(underlying)
+        logger.debug('Append {} row(s) to the Underlying table in the database.'.format(len(underlying_list)))
+        self.session.add_all(underlying_list)
+        logger.debug('Commit the new Underlying rows.')
+        self.session.commit()
+
+    def _retrieve_dividend_df(self, ticker_list, start_date, end_date) -> pd.DataFrame:
+        logger.debug("Reformatting dividend DataFrame from Excel.")
+        dividend_df = self._dataframe_sheet_name_dict[Dividend.__tablename__]
+        dividend_df = dividend_df.unstack().reset_index()
+        if len(list(dividend_df)) != 3:
+            raise ValueError("The dividend DataFrame loaded from excel is not in the correct format.")
+        dividend_df.columns = ['ticker', 'ex_div_date', 'dividend_amount']  # rename columns
+        dividend_df = dividend_df[dividend_df['ticker'].isin(ticker_list)].copy()  # only the eligible tickers
+        dividend_df = dividend_df[dividend_df['dividend_amount'] != 0].copy()  # non-zero dividend amounts only
+        dividend_df['comment'] = 'Loaded at {}'.format(str(datetime.today())[:19])
+        dividend_df['data_source'] = 'EXCEL'
+        ticker_underlying_id_dict = self.get_ticker_underlying_attribute_dict(ticker_list, Underlying.id)
+        dividend_df['underlying_id'] = dividend_df['ticker'].apply(lambda ticker: ticker_underlying_id_dict[ticker])
+        return dividend_df[['ex_div_date', 'dividend_amount', 'comment', 'data_source', 'underlying_id']]
+
+    def _retrieve_open_high_low_close_volume_df(self, ticker_list, start_date, end_date) -> pd.DataFrame:
+        logger.debug("Reformatting OHLC and volume DataFrames from Excel.")
+        value_df = None
+        comment = 'Loaded at {}'.format(str(datetime.today())[:19])
+        for data_table in self._data_table_list:
+            value_sub_df = self._dataframe_sheet_name_dict[data_table.__tablename__]
+            if value_sub_df is None:
+                continue
+            value_sub_df = value_sub_df.unstack().reset_index()
+            value_sub_df.columns = ['ticker', 'obs_date', 'value']
+            value_sub_df['data_type'] = data_table.__valuename__
+            value_sub_df = value_sub_df[value_sub_df['value'] != 0].copy()
+            if value_df is None:
+                value_df = value_sub_df.copy()
+            else:
+                # for each table, combine the DataFrames
+                value_df = pd.concat([value_df, value_sub_df], ignore_index=True)
+        # find the corresponding underlying id for each ticker
+        ticker_underlying_id_dict = self.get_ticker_underlying_attribute_dict(ticker_list, Underlying.id)
+        value_df['underlying_id'] = value_df['ticker'].apply(lambda ticker: ticker_underlying_id_dict[ticker])
+        value_df['comment'] = comment
+        value_df['data_source'] = 'EXCEL'
+        return value_df[['data_type', 'obs_date', 'value', 'comment', 'data_source', 'underlying_id']]
+
+    def __repr__(self):
+        return f"<ExcelFeeder(name = {self.database_name})>"
+
+
 def logger_time_interval_message(start_date: {date, datetime}, end_date: {date, datetime}) -> str:
     logger_message = ''
     if start_date is not None:
@@ -764,85 +974,13 @@ def logger_time_interval_message(start_date: {date, datetime}, end_date: {date, 
 
 
 def main():
-    # initialize a financial database handler
-    financial_db_handler = YahooFinancialDatabase(database_name=my_database_name)
-
-    # these are the actions and subsequent actions that the user can chose to do
-    # 1) what to do with the tickers and then how to retrieve them
-    actions = {'Add tickers to database': ['From URL', 'From excel', 'Manually'],
-               'Refresh tickers': ['Manually', 'Using an Underlying.attribute dictionary'],
-               'Delete tickers': ['Manually', 'Using an Underlying.attribute dictionary']}
-
-    # chose what to do with the database
-    first_choice = user_picks_element_from_list(list(actions.keys()))
-    second_choice = user_picks_element_from_list(actions[first_choice])
-
-    # retrieve the tickers as a list of strings
-    if second_choice == 'Manually':
-        tickers = input('\nEnter ticker(s) and separate them with a comma (,): ')
-        tickers = ''.join(tickers.split()).split(',')  # remove all blank spaces and separate each substring with comma
-    elif second_choice == 'From URL':
-        print("\nThe tickers are scraped from Yahoo Finance. You can create a stock screen from <https://finance.yahoo."
-              "com/screener/new>\nwhere you can chose e.g. the country and market capitalization.\nThen press 'Find "
-              "Stocks' and you will see a list of stocks in your browser. Copy-paste that URL below.")
-        url = input('\nEnter URL: ')
-        tickers = retrieve_tickers_from_yahoo(url)
-    elif second_choice == 'From excel':
-        print("\nMake sure the spreadsheet has a column named 'Yahoo'.")
-        excel_file_name = choose_excel_file_from_folder(excel_ticker_folder)
-        ticker_df = load_df(excel_file_name, excel_ticker_folder, first_column_index=False)
-        tickers = list(ticker_df['Yahoo'].values)
-    else:
-        ask_user = True
-        underlying_attribute_dict = {}
-        while ask_user:
-            enter_attribute = True
-            while enter_attribute:
-                underlying_attribute = input("\nEnter underlying attribute (e.g. 'sector'): ")
-                if underlying_attribute in list(Underlying.__dict__.keys()):
-                    enter_attribute = False
-                else:
-                    print("'{}' is not an attribute of Underlying.".format(underlying_attribute))
-            underlying_attribute_value = input("Enter values for '{}' separated by a comma "
-                                               "(all blanks will be replaced by '_'): ".format(underlying_attribute))
-            underlying_attribute_value = underlying_attribute_value.split(',')
-            underlying_attribute_value = capital_letter_no_blanks(underlying_attribute_value)
-            underlying_attribute_sub_dict = {getattr(Underlying, underlying_attribute): underlying_attribute_value}
-            print(underlying_attribute_sub_dict)
-            underlying_attribute_dict.update(underlying_attribute_sub_dict)
-            print('Current filter is as below:')
-            for key, value in underlying_attribute_dict.items():
-                print("{} = %s".format(key) % ','.join(value))
-            new_action = user_picks_element_from_list(['Add a new attribute for the filter', 'Done'])
-            if new_action == 'Done':
-                ask_user = False
-        tickers = financial_db_handler.get_ticker(underlying_attribute_dict)
-
-    # perform download, refresh or deletion of the tickers
-    if first_choice == 'Delete tickers':
-        print('You are about to delete {} ticker(s).\n%s'.format(len(tickers)) % ','.join(tickers))
-        confirmation = user_picks_element_from_list(['Cancel', 'Delete'])
-        if confirmation == 'Delete':
-            financial_db_handler.delete_underlying(tickers)
-    else:
-        counter = 1
-        for ticker_sub_list in list_grouper(tickers, 15):
-            print(f'Batch #{counter}')
-            if first_choice == 'Add tickers to database':
-                financial_db_handler.add_underlying(ticker_sub_list)
-            elif first_choice == 'Refresh tickers':
-                financial_db_handler.refresh_data_for_tickers(ticker_sub_list)
-            counter += 1
-
-
-def main_test():
-    fin_db = FinancialDatabase(my_database_name)
-    ticker = ['mcd', 'gs', '^gspc']
-    data = fin_db.get_underlying_data(ticker, ('sector', 'industry', 'long_name'))
-    print(data)
+    init_dir = excel_files_to_feed_database_folder
+    excel_db = ExcelFeeder(my_database_name, init_dir)
+    excel_db.load_data_from_excel()
+    excel_db.insert_data_to_database()
 
 
 if __name__ == '__main__':
-    main_test()
+    main()
 
 
