@@ -53,6 +53,7 @@ class Underlying(Base):
 
 class OpenPrice(Base):
     __tablename__ = 'open_price'
+    __valuename__ = 'open_quote'
     id = Column(Integer, primary_key=True)
     obs_date = Column(DateTime)
     open_quote = Column(Float)
@@ -67,6 +68,7 @@ class OpenPrice(Base):
 
 class HighPrice(Base):
     __tablename__ = 'high_price'
+    __valuename__ = 'high_quote'
     id = Column(Integer, primary_key=True)
     obs_date = Column(DateTime)
     high_quote = Column(Float)
@@ -81,6 +83,7 @@ class HighPrice(Base):
 
 class LowPrice(Base):
     __tablename__ = 'low_price'
+    __valuename__ = 'low_quote'
     id = Column(Integer, primary_key=True)
     obs_date = Column(DateTime)
     low_quote = Column(Float)
@@ -95,6 +98,7 @@ class LowPrice(Base):
 
 class ClosePrice(Base):
     __tablename__ = 'close_price'
+    __valuename__ = 'close_quote'
     id = Column(Integer, primary_key=True)
     obs_date = Column(DateTime)
     close_quote = Column(Float)
@@ -109,6 +113,7 @@ class ClosePrice(Base):
 
 class Volume(Base):
     __tablename__ = 'volume'
+    __valuename__ = 'volume_quote'
     id = Column(Integer, primary_key=True)
     obs_date = Column(DateTime)
     volume_quote = Column(Float)
@@ -123,6 +128,7 @@ class Volume(Base):
 
 class Dividend(Base):
     __tablename__ = 'dividend'
+    __valuename__ = 'dividend_amount'
     id = Column(Integer, primary_key=True)
     ex_div_date = Column(DateTime)
     dividend_amount = Column(Float)
