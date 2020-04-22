@@ -3,7 +3,7 @@ automatic_database_refresh.py
 """
 from datetime import datetime, time
 
-from financial_database import YahooFinancialDatabase
+from financial_database import YahooFinanceFeeder
 from config_database import my_database_name
 from models_db import Underlying
 
@@ -52,7 +52,7 @@ def refresh_tickers():
     ticker_filter[Underlying.currency] = currency
 
     # create a database handler and refresh the eligible tickers
-    fin_db_handler = YahooFinancialDatabase(my_database_name)
+    fin_db_handler = YahooFinanceFeeder(my_database_name)
     tickers = fin_db_handler.get_ticker(ticker_filter)
     try:
         fin_db_handler.refresh_data_for_tickers(tickers)
