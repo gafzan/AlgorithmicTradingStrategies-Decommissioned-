@@ -1,5 +1,6 @@
 *.db
 *.txt
+*.log
 volatility_ranking.py
 secrets.py
 automatic_database_refresh.py
