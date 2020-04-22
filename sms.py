@@ -1,5 +1,10 @@
 from twilio.rest import Client
-from secrets import account_sid, auth_token, twilio_number, my_number
+import os
+
+account_sid = os.environ.get('TWILIO_ACCOUNT_SID')
+auth_token = os.environ.get('TWILIO_AUTH_TOKEN')
+twilio_number = os.environ.get('MY_TWILIO_PHONE_NUMBER')
+my_number = os.environ.get('MY_PHONE_NUMBER')
 
 
 def send_sms(message: str)->None:
