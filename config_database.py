@@ -23,5 +23,5 @@ create_directory(data_request_folder)
 excel_files_to_feed_database_folder = r'C:\Users\{}\PycharmProjects\AlgorithmicTradingStrategies\excel_data\excel_based_feeder_workbooks'.format(user_name)
 create_directory(excel_files_to_feed_database_folder)
 
-my_database_name = r'sqlite:///C:\Users\{}\PycharmProjects\AlgorithmicTradingStrategies\stock_db_v2.db'.format(user_name)
+my_database_name = r'sqlite:///C:\Users\{}\PycharmProjects\AlgorithmicTradingStrategies\financial_database_v1.db'.format(user_name)
 
