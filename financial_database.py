@@ -592,6 +592,8 @@ class _DataFeeder(FinancialDatabase):
         logger.debug('Refresh dividends for {} ticker(s)'.format(len(ticker_list))
                      + logger_time_interval_message(start_date, end_date))
         dividend_df = self._retrieve_dividend_df(ticker_list, start_date, end_date)
+        if dividend_df is None or dividend_df.empty:
+            return
         unique_dates_eligible_to_deletion = list(set(list(dividend_df['ex_div_date'].values)))
         self._delete_open_high_low_close_volume_dividend_data(table=Dividend, ticker_list=ticker_list,
                                                               date_list=unique_dates_eligible_to_deletion)
@@ -611,6 +613,8 @@ class _DataFeeder(FinancialDatabase):
         logger.debug('Refresh OHLC and volume for {} ticker(s)'.format(len(ticker_list))
                      + logger_time_interval_message(start_date, end_date))
         open_high_low_close_volume_df = self._retrieve_open_high_low_close_volume_df(ticker_list, start_date, end_date)
+        if open_high_low_close_volume_df is None or open_high_low_close_volume_df.empty:
+            return
         data_table_ex_div_list = self._data_table_list.copy()
         data_table_ex_div_list.remove(Dividend)
 
@@ -676,7 +680,7 @@ class YahooFinanceFeeder(_DataFeeder):
         return
 
     def _retrieve_dividend_df(self, ticker_list: list, start_date: {date, datetime}, end_date: {date, datetime}) \
-            -> pd.DataFrame:
+            -> {pd.DataFrame, None}:
         logger.debug("Downloading dividend data from Yahoo Finance and reformat the DataFrame.")
         yf_ticker_list = self.yahoo_finance_ticker(ticker_list)  # need to download the dividends per YF ticker
         dividend_amount_total_df = None  # initialize the resulting DataFrame.
@@ -693,6 +697,8 @@ class YahooFinanceFeeder(_DataFeeder):
                     yf_historical_data_df = yf_ticker.history(period='max', start=start_date)
                 else:
                     yf_historical_data_df = yf_ticker.history(start=start_date, end=end_date + timedelta(days=1))
+            if yf_historical_data_df.empty:
+                continue
             yf_historical_data_df = yf_historical_data_df[start_date:]  # handle case when start_date is a holiday
             # yf_historical_data_df contains Open, High, Low, Close, Volume, Dividends and Stock Splits
             dividend_df = yf_historical_data_df.reset_index()[['Date', 'Dividends']]  # extract dates and dividend
@@ -705,6 +711,8 @@ class YahooFinanceFeeder(_DataFeeder):
                 # for each ticker, combine the DataFrames
                 dividend_amount_total_df = pd.concat([dividend_amount_total_df, dividend_amount_df], ignore_index=True)
             counter += 1
+        if dividend_amount_total_df is None or dividend_amount_total_df.empty:
+            return
         # add comment, name of data source and rename and reshuffle the columns
         dividend_amount_total_df['comment'] = 'Loaded at {}'.format(str(date.today()))
         dividend_amount_total_df['data_source'] = 'YAHOO_FINANCE'
@@ -712,11 +720,13 @@ class YahooFinanceFeeder(_DataFeeder):
         return dividend_amount_total_df[['ex_div_date', 'dividend_amount', 'comment', 'data_source', 'underlying_id']]
 
     def _retrieve_open_high_low_close_volume_df(self, ticker_list: list, start_date: {date, datetime},
-                                                end_date: {date, datetime}) -> pd.DataFrame:
+                                                end_date: {date, datetime}) -> {pd.DataFrame, None}:
         logger.debug("Downloading OHLC and volume data from Yahoo Finance and reformat the DataFrame.")
         multiple_ticker_str = self.multiple_ticker_string(ticker_list)  # ['ABC', 'DEF'] -> 'ABC DEF'
         yf_historical_data_df = yfinance.download(tickers=multiple_ticker_str, start=start_date,
                                                   end=end_date + timedelta(days=1))  # need to add an extra date
+        if yf_historical_data_df.empty:
+            return
         yf_historical_data_df = yf_historical_data_df.loc[start_date:]
         # E.g. using the two tickers 'ABB.ST' and 'MCD' the DataFrame yf_historical_data_df has the below shape:
         #              Adj Close              ...     Volume
@@ -973,6 +983,12 @@ def logger_time_interval_message(start_date: {date, datetime}, end_date: {date, 
     return logger_message
 
 
+def main_test():
+    ticker = '^CASE30'
+    fin_db = YahooFinanceFeeder(my_database_name)
+    fin_db.refresh_data_for_tickers(ticker)
+
+
 def main():
     init_dir = excel_files_to_feed_database_folder
     excel_db = ExcelFeeder(my_database_name, init_dir)
@@ -981,6 +997,6 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    main_test()
 
 
