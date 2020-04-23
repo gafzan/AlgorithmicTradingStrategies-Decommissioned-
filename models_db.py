@@ -28,7 +28,7 @@ class Underlying(Base):
     address = Column(String)  # combining 'address1' and 'address2'
     currency = Column(String)  # 'currency'
     description = Column(String)  # 'longBusinessSummary'
-    web_site = Column(String)  # 'website'
+    website = Column(String)  # 'website'
     has_dividend_history = Column(Boolean, default=False)
     first_ex_div_date = Column(Date, nullable=True, default=None)
     latest_observation_date = Column(DateTime, nullable=True)

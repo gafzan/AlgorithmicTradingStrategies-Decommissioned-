@@ -666,7 +666,7 @@ class YahooFinanceFeeder(_DataFeeder):
                                     city=ticker_info.get('city', default_str),
                                     address=ticker_info.get('address1', default_str),
                                     description=ticker_info.get('longBusinessSummary', default_str),
-                                    web_site=ticker_info.get('website', default_str))
+                                    website=ticker_info.get('website', default_str))
             underlying_list.append(underlying)
             counter += 1
         logger.debug('Append {} row(s) to the Underlying table in the database.'.format(len(underlying_list)))
@@ -811,7 +811,7 @@ class ExcelFeeder(_DataFeeder):
         self.initialdir = initialdir
         self._eligible_sheet_names = [Underlying.__tablename__]
         self._eligible_sheet_names.extend([data_table.__tablename__ for data_table in self._data_table_list])
-        self._eligible_col_names_underlying = ["ticker", "underlying_type", "long_name", "short_name", "sector", "industry", "country", "city", "address", "currency", "description", "web_site"]
+        self._eligible_col_names_underlying = ["ticker", "underlying_type", "long_name", "short_name", "sector", "industry", "country", "city", "address", "currency", "description", "website"]
         self._dataframe_sheet_name_dict = {data_table.__tablename__: None for data_table in self._data_table_list}
         self._dataframe_sheet_name_dict.update({Underlying.__tablename__: None})
         self._delete_dates_between_start_end = False
@@ -913,7 +913,7 @@ class ExcelFeeder(_DataFeeder):
                                     city=capital_letter_no_blanks(underlying_df['city'].values[0]),
                                     address=underlying_df['address'].values[0],
                                     description=underlying_df['description'].values[0],
-                                    web_site=underlying_df['web_site'].values[0])
+                                    website=underlying_df['website'].values[0])
             underlying_list.append(underlying)
         logger.debug('Append {} row(s) to the Underlying table in the database.'.format(len(underlying_list)))
         self.session.add_all(underlying_list)
