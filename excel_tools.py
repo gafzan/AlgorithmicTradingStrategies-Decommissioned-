@@ -191,6 +191,7 @@ def format_requested_data_workbook(complete_workbook_path: str):
     try:
         underlying_data_sheet = workbook['underlying_data']
     except KeyError:
+        workbook.save(complete_workbook_path)
         return
     underlying_data_sheet.cell(row=1, column=1).value = 'ticker'
     for col in range(1, underlying_data_sheet.max_column + 1):
