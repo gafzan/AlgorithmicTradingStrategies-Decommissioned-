@@ -4,7 +4,7 @@ automatic_database_refresh.py
 from datetime import datetime, time
 
 from financial_database import YahooFinanceFeeder
-from config_database import my_database_name
+from config_database import my_database_name, base_folder
 from models_db import Underlying
 
 from sms import send_sms
@@ -19,9 +19,14 @@ __NEW_YORK_CLOSE__ = time(hour=5, minute=0, second=0)  # T + 1 TK time
 
 # logger
 formatter = logging.Formatter('%(asctime)s : %(module)s : %(funcName)s : %(message)s')
+log_file_name = base_folder + '\\automatic_refresh'
+file_handler = logging.FileHandler(log_file_name + '.log')
+file_handler.setFormatter(formatter)
 stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
+stream_handler.setLevel(level=logging.ERROR)
 logger = logging.getLogger(__name__)
+logger.addHandler(file_handler)
 logger.addHandler(stream_handler)
 logger.setLevel(logging.DEBUG)
 
@@ -56,6 +61,7 @@ def refresh_tickers():
     tickers = fin_db_handler.get_ticker(ticker_filter)
     try:
         fin_db_handler.refresh_data_for_tickers(tickers)
+        logger.debug('Successfully refreshed data for {} ticker(s) denominated in {}.'.format(len(tickers), currency))
     except Exception:
         logger.error("Error during refresh denominated in {}.".format(currency), exc_info=True)
         send_sms('Error during refresh denominated in {}.'.format(currency))
