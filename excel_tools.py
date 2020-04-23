@@ -169,6 +169,48 @@ def choose_excel_file_from_folder(folder_path: str) -> str:
     return excel_name_list[number - 1]
 
 
+def format_requested_data_workbook(complete_workbook_path: str):
+    """
+    Formats the workbook that is the result of a data request from the financial database
+    :param complete_workbook_path: destination of the workbook
+    :return:
+    """
+
+    workbook = load_workbook(complete_workbook_path)
+
+    for sheet in [workbook[sheet_name] for sheet_name in workbook.sheetnames if sheet_name != 'underlying_data']:
+        sheet.cell(row=1, column=1).value = 'Date'
+        for col in range(1, sheet.max_column + 1):
+            if col == 1:  # first column has the dates
+                sheet.column_dimensions[get_column_letter(col)].width = 15
+            else:
+                sheet.column_dimensions[get_column_letter(col)].width = 18
+            basic_formatting(sheet=sheet, col=col, cell_formatting='#,##0.00')
+        sheet.freeze_panes = 'B2'
+
+    try:
+        underlying_data_sheet = workbook['underlying_data']
+    except KeyError:
+        return
+    underlying_data_sheet.cell(row=1, column=1).value = 'ticker'
+    for col in range(1, underlying_data_sheet.max_column + 1):
+        if col == 1:
+            underlying_data_sheet.column_dimensions[get_column_letter(col)].width = 10
+        else:
+            underlying_data_sheet.column_dimensions[get_column_letter(col)].width = 28
+        for row in range(1, underlying_data_sheet.max_row + 1):
+            cell = underlying_data_sheet.cell(row=row, column=col)
+            if row == 1:
+                cell.font = __COLUMN_NAMES_FONT__
+                cell.fill = __COLUMN_NAMES_FILL__
+            elif col == 1:
+                cell.fill = __DATE_COLUMN_FILL__
+            cell.alignment = Alignment(horizontal='left', vertical='center')
+            cell.border = __BORDER__
+
+    workbook.save(complete_workbook_path)
+
+
 def format_risk_return_analysis_workbook(complete_workbook_path: str):
     """Assumes that complete_workbook_path is a string containing the path to the Excel workbook. Changes the format
     of certain sheets."""
