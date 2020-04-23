@@ -186,6 +186,7 @@ class FinancialDatabase:
             else:
                 # concatenate the DataFrame
                 result_df = pd.merge(result_df, result_sub_df, on='ticker')
+        result_df.set_index('ticker', inplace=True)
         return result_df
 
     def _update_obs_date_and_dividend_history_status(self,  tickers: list) -> None:
