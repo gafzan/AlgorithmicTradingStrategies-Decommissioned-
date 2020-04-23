@@ -308,9 +308,12 @@ class FinancialDatabase:
 
         # currency convert if applicable
         if isinstance(currency, str) and table != Volume:
-            return self._currency_convert_df(result_pivoted_df, currency)
+            result_pivoted_df = self._currency_convert_df(result_pivoted_df, currency)
         else:
-            return result_pivoted_df
+            result_pivoted_df = result_pivoted_df
+        # if all columns are nan, remove the entire row
+        result_pivoted_df.dropna(inplace=True, how='all')
+        return result_pivoted_df
 
     def _input_check_before_getting_ohlc_volume(self, tickers: {str, list}, start_date: {date, datetime}, end_date: {date, datetime}) -> tuple:
         """This method checks some of the inputs for _get_open_high_low_close_volume_dividend_df method. Returns a
