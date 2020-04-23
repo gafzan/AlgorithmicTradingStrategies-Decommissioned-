@@ -8,11 +8,12 @@ import webbrowser
 
 import pandas as pd
 from datetime import date
+import logging
 
 from models_db import Underlying
 from financial_database import YahooFinanceFeeder, FinancialDatabase
 from config_database import my_database_name, excel_ticker_folder, data_request_folder
-from excel_tools import save_df
+from excel_tools import save_df, format_requested_data_workbook
 
 __DEFAULT_FONT__ = ("Arial", 11)
 __DEFAULT_BOLD_FONT__ = __DEFAULT_FONT__ + ('bold', )
@@ -23,6 +24,13 @@ action_method_dict = {'Add underlying': [method_list[0], method_list[1], method_
                       'Refresh underlying': [method_list[0], method_list[1], method_list[3]],
                       'Delete underlying': [method_list[0], method_list[1], method_list[3]],
                       'Download data': [method_list[0], method_list[1], method_list[3]]}
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s : %(module)s : %(message)s')
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+logger.addHandler(stream_handler)
 
 
 class HandleUnderlyingWindow(Tk):
@@ -172,7 +180,7 @@ class ExcelInputWindow(_InputWindow):
             Radiobutton(self, text=col_name, value=col_name, variable=self.string_var).grid(row=counter)
             counter += 1
         self.string_var.set(list(self.result_df)[0])  # select the first column
-        Button(self, text='Get tickers', command=self.get_values_from_column).grid(row=counter)
+        Button(self, text='Get tickers', fg='green', command=self.get_values_from_column).grid(row=counter)
 
 
 class URLInputWindow(_InputWindow):
@@ -315,7 +323,7 @@ class DataRetrievalWindow(_InputWindow):
         self.attribute_combo['values'] = self.available_data_choices
         self.attribute_combo.set(self.available_data_choices[0])
         self.attribute_combo.grid(row=1, sticky='w')
-        Button(self, text='Get data', command=self.get_data).grid(row=2, sticky='w')
+        Button(self, text='Get data', fg='green', command=self.get_data).grid(row=2, sticky='w')
         self.data_display_lable = Label(self, text=self.requested_data_desc, font=__DEFAULT_FONT__)
         self.data_display_lable.grid(row=3)
 
@@ -338,7 +346,7 @@ class DataRetrievalWindow(_InputWindow):
             self.requested_data_desc += '\n' + dataframe_name
         self.data_display_lable = Label(self, text=self.requested_data_desc, font=__DEFAULT_FONT__)
         self.data_display_lable.grid(row=3)
-        Button(self, text='Save result', command=self.save_data_to_excel).grid(row=4)
+        Button(self, text='Save result', fg='green', command=self.save_data_to_excel).grid(row=4)
 
     def save_data_to_excel(self):
         if self.result_df_dict == {}:
@@ -347,9 +355,11 @@ class DataRetrievalWindow(_InputWindow):
         else:
             file_name = filedialog.asksaveasfile(mode='w', initialdir=data_request_folder, title='Save requested data.',
                                                  defaultextension='.xlsx').name
-            workbook_name = file_name.split('/')[-1].replace('.xlsx', '')
-            folder_path = file_name.replace(workbook_name + '.xlsx', '')
-            save_df(list(self.result_df_dict.values()), workbook_name, folder_path, list(self.result_df_dict.keys()))
+            logger.info("Saving data to excel workbook...")
+            save_df(list(self.result_df_dict.values()), full_path=file_name, sheet_name_list=list(self.result_df_dict.keys()))
+            logger.info("Formatting excel workbook...")
+            format_requested_data_workbook(file_name)
+            logger.info('Done!')
             self.cancel()
 
     def cancel(self, event=None):
@@ -367,7 +377,8 @@ class UnderlyingDataWindow(DataRetrievalWindow):
         super().__init__(parent, title, ticker_list)
 
     def create_widgets(self):
-        counter = 0
+        Label(Label(self, text='Select data', font=__DEFAULT_BOLD_FONT__).grid())
+        counter = 1
         for attribute in self.attribute_list:
             var = IntVar()
             Checkbutton(self, text=attribute, variable=var).grid(row=counter, sticky='w')
@@ -381,6 +392,7 @@ class UnderlyingDataWindow(DataRetrievalWindow):
             fin_db = FinancialDatabase(my_database_name)
             result_df = fin_db.get_underlying_data(self.ticker_list, chosen_attributes)
             self.parent.result_df_dict.update({'underlying_data': result_df})
+            logger.info('Done with loading underlying data!')
             self.cancel()
         else:
             msg.showinfo('Warning', "Please select an underlying attribute e.g. 'sector' or 'currency'.")
@@ -394,7 +406,7 @@ class DailyDataWindow(DataRetrievalWindow):
         super().__init__(parent, title, ticker_list)
 
     def create_widgets(self):
-        Label(self, text='Dates', font=__DEFAULT_FONT__).grid(columnspan=2)
+        Label(self, text='Select dates and format', font=__DEFAULT_BOLD_FONT__).grid(columnspan=2)
         Label(self, text='Start date:', font=__DEFAULT_FONT__).grid(row=1)
         self.start_date_entry = DateEntry(self, width=15, background='green', foreground='white', borderwidth=3,
                                           year=2000, month=1, day=1, date_pattern='mm/dd/y')
@@ -441,7 +453,7 @@ class PriceDataWindow(DailyDataWindow):
         self.div_tax_entry = Entry(self)
         self.div_tax_entry.config(state='disabled')
         self.div_tax_entry.grid(row=5, column=1)
-        Button(self, text='Get price', command=self.get_price).grid(row=6)
+        Button(self, text='Get price', fg='green', command=self.get_price).grid(row=6, columnspan=2)
 
     def get_currency(self):
         if len(self.currency_entry.get()) == 0:
@@ -476,6 +488,7 @@ class PriceDataWindow(DailyDataWindow):
                                                    end_date=self.get_end_date(), currency=self.get_currency(),
                                                    withholding_tax=self.get_div_tax())
             self.parent.result_df_dict.update({'total_return_price' + price_info: result_df})
+        logger.info('Done with loading price!')
         self.cancel()
 
 
@@ -485,12 +498,13 @@ class VolumeDataWindow(DailyDataWindow):
 
     def create_widgets(self):
         super().create_widgets()
-        Button(self, text='Get volume', command=self.get_volume).grid(row=6)
+        Button(self, text='Get volume', fg='green', command=self.get_volume).grid(row=6, columnspan=2)
 
     def get_volume(self):
         fin_db = FinancialDatabase(my_database_name)
         result_df = fin_db.get_volume_df(tickers=self.ticker_list, start_date=self.get_start_date(), end_date=self.get_end_date())
         self.parent.result_df_dict.update({'volume': result_df})
+        logger.info('Done with loading volume!')
         self.cancel()
 
 
@@ -503,7 +517,7 @@ class LiquidityDataWindow(DailyDataWindow):
         Label(self, text='Currency:', font=__DEFAULT_FONT__).grid(row=3)
         self.currency_entry = Entry(self)
         self.currency_entry.grid(row=3, column=1)
-        Button(self, text='Get liquidity', command=self.get_liquidity).grid(row=4)
+        Button(self, text='Get liquidity', fg='green', command=self.get_liquidity).grid(row=4, columnspan=2)
 
     def get_currency(self):
         if len(self.currency_entry.get()) == 0:
@@ -520,6 +534,7 @@ class LiquidityDataWindow(DailyDataWindow):
         result_df = fin_db.get_liquidity_df(tickers=self.ticker_list, start_date=self.get_start_date(),
                                             end_date=self.get_end_date(), currency=self.get_currency())
         self.parent.result_df_dict.update({'liquidity' + price_info: result_df})
+        logger.info('Done with loading liquidity!')
         self.cancel()
 
 
