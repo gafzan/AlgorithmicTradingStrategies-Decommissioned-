@@ -937,6 +937,8 @@ class ExcelFeeder(_DataFeeder):
     def _retrieve_dividend_df(self, ticker_list, start_date, end_date) -> pd.DataFrame:
         logger.debug("Reformatting dividend DataFrame from Excel.")
         dividend_df = self._dataframe_sheet_name_dict[Dividend.__tablename__]
+        if dividend_df is None:
+            return
         dividend_df = dividend_df.unstack().reset_index()
         if len(list(dividend_df)) != 3:
             raise ValueError("The dividend DataFrame loaded from excel is not in the correct format.")
@@ -987,12 +989,6 @@ def logger_time_interval_message(start_date: {date, datetime}, end_date: {date, 
     return logger_message
 
 
-def main_test():
-    ticker = '^CASE30'
-    fin_db = YahooFinanceFeeder(my_database_name)
-    fin_db.refresh_data_for_tickers(ticker)
-
-
 def main():
     init_dir = excel_files_to_feed_database_folder
     excel_db = ExcelFeeder(my_database_name, init_dir)
@@ -1001,6 +997,6 @@ def main():
 
 
 if __name__ == '__main__':
-    main_test()
+    main()
 
 
