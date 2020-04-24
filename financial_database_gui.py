@@ -312,7 +312,8 @@ class DataRetrievalWindow(_InputWindow):
 
     def __init__(self, parent=None, title: str = None, ticker_list: list = None):
         self.ticker_list = ticker_list
-        self.available_data_choices = ['Price', 'Volume', 'Liquidity', 'Data for underlying']
+        self.available_data_choices = ['Open price', 'High price', 'Low price', 'Close price', 'Volume', 'Liquidity',
+                                       'Dividend', 'Data for underlying']
         self.result_df_dict = {}  # list of DataFrames
         self.requested_data_desc = ''
         super().__init__(parent, title)
@@ -321,7 +322,7 @@ class DataRetrievalWindow(_InputWindow):
         Label(self, text='Chose what data you want to download.', justify='l', font=__DEFAULT_FONT__).grid()
         self.attribute_combo = Combobox(self)
         self.attribute_combo['values'] = self.available_data_choices
-        self.attribute_combo.set(self.available_data_choices[0])
+        self.attribute_combo.set(self.available_data_choices[3])
         self.attribute_combo.grid(row=1, sticky='w')
         Button(self, text='Get data', fg='green', command=self.get_data).grid(row=2, sticky='w')
         self.data_display_lable = Label(self, text=self.requested_data_desc, font=__DEFAULT_FONT__)
@@ -331,12 +332,20 @@ class DataRetrievalWindow(_InputWindow):
         data_request = self.attribute_combo.get()
         if data_request == 'Data for underlying':
             UnderlyingDataWindow(self, title=data_request, ticker_list=self.ticker_list)
-        elif data_request == 'Price':
-            PriceDataWindow(self, title=data_request, ticker_list=self.ticker_list)
+        elif data_request == 'Open price':
+            OpenPriceDataWindow(self, title=data_request, ticker_list=self.ticker_list)
+        elif data_request == 'High price':
+            HighPriceDataWindow(self, title=data_request, ticker_list=self.ticker_list)
+        elif data_request == 'Low price':
+            LowPriceDataWindow(self, title=data_request, ticker_list=self.ticker_list)
+        elif data_request == 'Close price':
+            ClosePriceDataWindow(self, title=data_request, ticker_list=self.ticker_list)
         elif data_request == 'Volume':
             VolumeDataWindow(self, title=data_request, ticker_list=self.ticker_list)
         elif data_request == 'Liquidity':
             LiquidityDataWindow(self, title=data_request, ticker_list=self.ticker_list)
+        elif data_request == 'Dividend':
+            DividendDataWindow(self, title=data_request, ticker_list=self.ticker_list)
         self.display_data_request()
 
     def display_data_request(self):
@@ -434,7 +443,97 @@ class DailyDataWindow(DataRetrievalWindow):
             return date(year, month, day)
 
 
-class PriceDataWindow(DailyDataWindow):
+class OpenPriceDataWindow(DailyDataWindow):
+    def __init__(self, parent=None, title: str = None, ticker_list: list = None):
+        super().__init__(parent, title, ticker_list)
+
+    def create_widgets(self):
+        super().create_widgets()
+        Label(self, text='Currency:', font=__DEFAULT_FONT__).grid(row=3)
+        self.currency_entry = Entry(self)
+        self.currency_entry.grid(row=3, column=1)
+        Button(self, text='Get open price', fg='green', command=self.get_open_price).grid(row=4, columnspan=2)
+
+    def get_currency(self):
+        if len(self.currency_entry.get()) == 0:
+            return None
+        else:
+            return self.currency_entry.get()
+
+    def get_open_price(self):
+        fin_db = FinancialDatabase(my_database_name)
+        price_info = ''
+        if self.get_currency() is not None:
+            price_info += '_' + self.get_currency().upper()
+
+        result_df = fin_db.get_open_price_df(tickers=self.ticker_list, start_date=self.get_start_date(),
+                                             end_date=self.get_end_date(), currency=self.get_currency())
+        self.parent.result_df_dict.update({'open_price' + price_info: result_df})
+        logger.info('Done with loading open price!')
+        self.cancel()
+
+
+class HighPriceDataWindow(DailyDataWindow):
+    def __init__(self, parent=None, title: str = None, ticker_list: list = None):
+        super().__init__(parent, title, ticker_list)
+
+    def create_widgets(self):
+        super().create_widgets()
+        Label(self, text='Currency:', font=__DEFAULT_FONT__).grid(row=3)
+        self.currency_entry = Entry(self)
+        self.currency_entry.grid(row=3, column=1)
+        Button(self, text='Get high price', fg='green', command=self.get_high_price).grid(row=4, columnspan=2)
+
+    def get_currency(self):
+        if len(self.currency_entry.get()) == 0:
+            return None
+        else:
+            return self.currency_entry.get()
+
+    def get_high_price(self):
+        fin_db = FinancialDatabase(my_database_name)
+        price_info = ''
+        if self.get_currency() is not None:
+            price_info += '_' + self.get_currency().upper()
+
+        result_df = fin_db.get_high_price_df(tickers=self.ticker_list, start_date=self.get_start_date(),
+                                             end_date=self.get_end_date(), currency=self.get_currency())
+        self.parent.result_df_dict.update({'high_price' + price_info: result_df})
+        logger.info('Done with loading high price!')
+        self.cancel()
+
+
+class LowPriceDataWindow(DailyDataWindow):
+    def __init__(self, parent=None, title: str = None, ticker_list: list = None):
+        super().__init__(parent, title, ticker_list)
+
+    def create_widgets(self):
+        super().create_widgets()
+        Label(self, text='Currency:', font=__DEFAULT_FONT__).grid(row=3)
+        self.currency_entry = Entry(self)
+        self.currency_entry.grid(row=3, column=1)
+        Button(self, text='Get low price', fg='green', command=self.get_low_price).grid(row=4, columnspan=2)
+
+    def get_currency(self):
+        if len(self.currency_entry.get()) == 0:
+            return None
+        else:
+            return self.currency_entry.get()
+
+    def get_low_price(self):
+        fin_db = FinancialDatabase(my_database_name)
+        price_info = ''
+        if self.get_currency() is not None:
+            price_info += '_' + self.get_currency().upper()
+
+        result_df = fin_db.get_low_price_df(tickers=self.ticker_list, start_date=self.get_start_date(),
+                                            end_date=self.get_end_date(), currency=self.get_currency())
+        self.parent.result_df_dict.update({'low_price' + price_info: result_df})
+        logger.info('Done with loading low price!')
+        self.cancel()
+
+
+class ClosePriceDataWindow(DailyDataWindow):
     def __init__(self, parent=None, title: str = None, ticker_list: list = None):
         super().__init__(parent, title, ticker_list)
 
@@ -453,7 +552,7 @@ class PriceDataWindow(DailyDataWindow):
         self.div_tax_entry = Entry(self)
         self.div_tax_entry.config(state='disabled')
         self.div_tax_entry.grid(row=5, column=1)
-        Button(self, text='Get price', fg='green', command=self.get_price).grid(row=6, columnspan=2)
+        Button(self, text='Get close price', fg='green', command=self.get_price).grid(row=6, columnspan=2)
 
     def get_currency(self):
         if len(self.currency_entry.get()) == 0:
@@ -535,6 +634,36 @@ class LiquidityDataWindow(DailyDataWindow):
                                             end_date=self.get_end_date(), currency=self.get_currency())
         self.parent.result_df_dict.update({'liquidity' + price_info: result_df})
         logger.info('Done with loading liquidity!')
+        self.cancel()
+
+
+class DividendDataWindow(DailyDataWindow):
+    def __init__(self, parent=None, title: str = None, ticker_list: list = None):
+        super().__init__(parent, title, ticker_list)
+
+    def create_widgets(self):
+        super().create_widgets()
+        Label(self, text='Currency:', font=__DEFAULT_FONT__).grid(row=3)
+        self.currency_entry = Entry(self)
+        self.currency_entry.grid(row=3, column=1)
+        Button(self, text='Get dividend', fg='green', command=self.get_dividend).grid(row=4, columnspan=2)
+
+    def get_currency(self):
+        if len(self.currency_entry.get()) == 0:
+            return None
+        else:
+            return self.currency_entry.get()
+
+    def get_dividend(self):
+        fin_db = FinancialDatabase(my_database_name)
+        price_info = ''
+        if self.get_currency() is not None:
+            price_info += '_' + self.get_currency().upper()
+
+        result_df = fin_db.get_dividend_df(tickers=self.ticker_list, start_date=self.get_start_date(),
+                                           end_date=self.get_end_date(), currency=self.get_currency())
+        self.parent.result_df_dict.update({'dividend' + price_info: result_df})
+        logger.info('Done with loading dividend!')
         self.cancel()
 
 
