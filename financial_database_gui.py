@@ -425,12 +425,26 @@ class DailyDataWindow(DataRetrievalWindow):
                                         year=date.today().year, month=date.today().month, day=date.today().day,
                                         date_pattern='mm/dd/y')
         self.end_date_entry.grid(row=2, column=1)
+        Label(self, text='Handle missing data:', font=__DEFAULT_FONT__).grid(row=3)
+        self.handle_nan_alternatives = ['Do nothing', 'Roll value forward', 'Remove all']
+        self.handle_nan_combo = Combobox(self)
+        self.handle_nan_combo['values'] = self.handle_nan_alternatives
+        self.handle_nan_combo.set(self.handle_nan_alternatives[0])
+        self.handle_nan_combo.grid(row=3, column=1)
 
     def get_start_date(self):
         return self.get_date(self.start_date_entry.get())
 
     def get_end_date(self):
         return self.get_date(self.end_date_entry.get())
+
+    def handle_nan_df(self, df: pd.DataFrame)-> pd.DataFrame:
+        if self.handle_nan_combo.get() == self.handle_nan_alternatives[0]:
+            return df
+        elif self.handle_nan_combo.get() == self.handle_nan_alternatives[1]:
+            return df.fillna(method='ffill')
+        elif self.handle_nan_combo.get() == self.handle_nan_alternatives[2]:
+            return df.dropna(how='any')
 
     @staticmethod
     def get_date(_date):
@@ -449,10 +463,10 @@ class OpenPriceDataWindow(DailyDataWindow):
 
     def create_widgets(self):
         super().create_widgets()
-        Label(self, text='Currency:', font=__DEFAULT_FONT__).grid(row=3)
+        Label(self, text='Currency:', font=__DEFAULT_FONT__).grid(row=4)
         self.currency_entry = Entry(self)
-        self.currency_entry.grid(row=3, column=1)
-        Button(self, text='Get open price', fg='green', command=self.get_open_price).grid(row=4, columnspan=2)
+        self.currency_entry.grid(row=4, column=1)
+        Button(self, text='Get open price', fg='green', command=self.get_open_price).grid(row=5, columnspan=2)
 
     def get_currency(self):
         if len(self.currency_entry.get()) == 0:
@@ -468,6 +482,7 @@ class OpenPriceDataWindow(DailyDataWindow):
 
         result_df = fin_db.get_open_price_df(tickers=self.ticker_list, start_date=self.get_start_date(),
                                              end_date=self.get_end_date(), currency=self.get_currency())
+        result_df = self.handle_nan_df(result_df)
         self.parent.result_df_dict.update({'open_price' + price_info: result_df})
         logger.info('Done with loading open price!')
         self.cancel()
@@ -479,10 +494,10 @@ class HighPriceDataWindow(DailyDataWindow):
 
     def create_widgets(self):
         super().create_widgets()
-        Label(self, text='Currency:', font=__DEFAULT_FONT__).grid(row=3)
+        Label(self, text='Currency:', font=__DEFAULT_FONT__).grid(row=4)
         self.currency_entry = Entry(self)
-        self.currency_entry.grid(row=3, column=1)
-        Button(self, text='Get high price', fg='green', command=self.get_high_price).grid(row=4, columnspan=2)
+        self.currency_entry.grid(row=4, column=1)
+        Button(self, text='Get high price', fg='green', command=self.get_high_price).grid(row=5, columnspan=2)
 
     def get_currency(self):
         if len(self.currency_entry.get()) == 0:
@@ -498,6 +513,7 @@ class HighPriceDataWindow(DailyDataWindow):
 
         result_df = fin_db.get_high_price_df(tickers=self.ticker_list, start_date=self.get_start_date(),
                                              end_date=self.get_end_date(), currency=self.get_currency())
+        result_df = self.handle_nan_df(result_df)
         self.parent.result_df_dict.update({'high_price' + price_info: result_df})
         logger.info('Done with loading high price!')
         self.cancel()
@@ -509,10 +525,10 @@ class LowPriceDataWindow(DailyDataWindow):
 
     def create_widgets(self):
         super().create_widgets()
-        Label(self, text='Currency:', font=__DEFAULT_FONT__).grid(row=3)
+        Label(self, text='Currency:', font=__DEFAULT_FONT__).grid(row=4)
         self.currency_entry = Entry(self)
-        self.currency_entry.grid(row=3, column=1)
-        Button(self, text='Get low price', fg='green', command=self.get_low_price).grid(row=4, columnspan=2)
+        self.currency_entry.grid(row=4, column=1)
+        Button(self, text='Get low price', fg='green', command=self.get_low_price).grid(row=5, columnspan=2)
 
     def get_currency(self):
         if len(self.currency_entry.get()) == 0:
@@ -528,6 +544,7 @@ class LowPriceDataWindow(DailyDataWindow):
 
         result_df = fin_db.get_low_price_df(tickers=self.ticker_list, start_date=self.get_start_date(),
                                             end_date=self.get_end_date(), currency=self.get_currency())
+        result_df = self.handle_nan_df(result_df)
         self.parent.result_df_dict.update({'low_price' + price_info: result_df})
         logger.info('Done with loading low price!')
         self.cancel()
@@ -539,20 +556,20 @@ class ClosePriceDataWindow(DailyDataWindow):
 
     def create_widgets(self):
         super().create_widgets()
-        Label(self, text='Currency:', font=__DEFAULT_FONT__).grid(row=3)
+        Label(self, text='Currency:', font=__DEFAULT_FONT__).grid(row=4)
         self.currency_entry = Entry(self)
-        self.currency_entry.grid(row=3, column=1)
-        Label(self, text='Total return:', font=__DEFAULT_FONT__).grid(row=4)
+        self.currency_entry.grid(row=4, column=1)
+        Label(self, text='Total return:', font=__DEFAULT_FONT__).grid(row=5)
         self.total_return_combo = Combobox(self)
         self.total_return_combo.bind('<<ComboboxSelected>>', self.update_total_return)
         self.total_return_combo['values'] = ['No', 'Yes']
         self.total_return_combo.set('No')
-        self.total_return_combo.grid(row=4, column=1)
-        Label(self, text='Tax on dividends (%):', font=__DEFAULT_FONT__).grid(row=5)
+        self.total_return_combo.grid(row=5, column=1)
+        Label(self, text='Tax on dividends (%):', font=__DEFAULT_FONT__).grid(row=6)
         self.div_tax_entry = Entry(self)
         self.div_tax_entry.config(state='disabled')
-        self.div_tax_entry.grid(row=5, column=1)
-        Button(self, text='Get close price', fg='green', command=self.get_price).grid(row=6, columnspan=2)
+        self.div_tax_entry.grid(row=6, column=1)
+        Button(self, text='Get close price', fg='green', command=self.get_price).grid(row=7, columnspan=2)
 
     def get_currency(self):
         if len(self.currency_entry.get()) == 0:
@@ -580,12 +597,14 @@ class ClosePriceDataWindow(DailyDataWindow):
         if self.total_return_combo.get() == 'No':
             result_df = fin_db.get_close_price_df(tickers=self.ticker_list, start_date=self.get_start_date(),
                                                   end_date=self.get_end_date(), currency=self.get_currency())
+            result_df = self.handle_nan_df(result_df)
             self.parent.result_df_dict.update({'close_price' + price_info: result_df})
         else:
 
             result_df = fin_db.get_total_return_df(tickers=self.ticker_list, start_date=self.get_start_date(),
                                                    end_date=self.get_end_date(), currency=self.get_currency(),
                                                    withholding_tax=self.get_div_tax())
+            result_df = self.handle_nan_df(result_df)
             self.parent.result_df_dict.update({'total_return_price' + price_info: result_df})
         logger.info('Done with loading price!')
         self.cancel()
@@ -597,11 +616,12 @@ class VolumeDataWindow(DailyDataWindow):
 
     def create_widgets(self):
         super().create_widgets()
-        Button(self, text='Get volume', fg='green', command=self.get_volume).grid(row=6, columnspan=2)
+        Button(self, text='Get volume', fg='green', command=self.get_volume).grid(row=4, columnspan=2)
 
     def get_volume(self):
         fin_db = FinancialDatabase(my_database_name)
         result_df = fin_db.get_volume_df(tickers=self.ticker_list, start_date=self.get_start_date(), end_date=self.get_end_date())
+        result_df = self.handle_nan_df(result_df)
         self.parent.result_df_dict.update({'volume': result_df})
         logger.info('Done with loading volume!')
         self.cancel()
@@ -613,10 +633,10 @@ class LiquidityDataWindow(DailyDataWindow):
 
     def create_widgets(self):
         super().create_widgets()
-        Label(self, text='Currency:', font=__DEFAULT_FONT__).grid(row=3)
+        Label(self, text='Currency:', font=__DEFAULT_FONT__).grid(row=4)
         self.currency_entry = Entry(self)
-        self.currency_entry.grid(row=3, column=1)
-        Button(self, text='Get liquidity', fg='green', command=self.get_liquidity).grid(row=4, columnspan=2)
+        self.currency_entry.grid(row=4, column=1)
+        Button(self, text='Get liquidity', fg='green', command=self.get_liquidity).grid(row=5, columnspan=2)
 
     def get_currency(self):
         if len(self.currency_entry.get()) == 0:
@@ -632,6 +652,7 @@ class LiquidityDataWindow(DailyDataWindow):
 
         result_df = fin_db.get_liquidity_df(tickers=self.ticker_list, start_date=self.get_start_date(),
                                             end_date=self.get_end_date(), currency=self.get_currency())
+        result_df = self.handle_nan_df(result_df)
         self.parent.result_df_dict.update({'liquidity' + price_info: result_df})
         logger.info('Done with loading liquidity!')
         self.cancel()
@@ -643,10 +664,10 @@ class DividendDataWindow(DailyDataWindow):
 
     def create_widgets(self):
         super().create_widgets()
-        Label(self, text='Currency:', font=__DEFAULT_FONT__).grid(row=3)
+        Label(self, text='Currency:', font=__DEFAULT_FONT__).grid(row=4)
         self.currency_entry = Entry(self)
-        self.currency_entry.grid(row=3, column=1)
-        Button(self, text='Get dividend', fg='green', command=self.get_dividend).grid(row=4, columnspan=2)
+        self.currency_entry.grid(row=4, column=1)
+        Button(self, text='Get dividend', fg='green', command=self.get_dividend).grid(row=5, columnspan=2)
 
     def get_currency(self):
         if len(self.currency_entry.get()) == 0:
@@ -662,6 +683,7 @@ class DividendDataWindow(DailyDataWindow):
 
         result_df = fin_db.get_dividend_df(tickers=self.ticker_list, start_date=self.get_start_date(),
                                            end_date=self.get_end_date(), currency=self.get_currency())
+        result_df = self.handle_nan_df(result_df)
         self.parent.result_df_dict.update({'dividend' + price_info: result_df})
         logger.info('Done with loading dividend!')
         self.cancel()
