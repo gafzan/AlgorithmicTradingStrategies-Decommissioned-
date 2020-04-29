@@ -3,10 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import math
 from matplotlib import cm
-from string import ascii_letters
-import pandas as pd
 import seaborn as sns
-
 
 
 def realized_volatility(price_df: pd.DataFrame, *vol_lag, annualized_factor: int = 252, allowed_number_na: int = 5) \
@@ -32,27 +29,45 @@ def realized_volatility(price_df: pd.DataFrame, *vol_lag, annualized_factor: int
     return max_volatility_df
 
 
-def relative_sma(price_df: pd.DataFrame, sma_lag: int, allowed_number_na: int = 5) -> pd.DataFrame:
+def relative_sma(price_df: pd.DataFrame, sma_lag: int, max_number_of_na: int = 5) -> pd.DataFrame:
     """Assumes price_df is a DataFrame filled with daily prices as values, tickers as column names and observation dates
     as index. Assumes that sma_lag and allowed_number_na are int. Returns a DataFrame with the simple moving average
     (SMA) divided by the spot."""
-    sma_df = rolling_average(price_df, sma_lag, allowed_number_na)
+    sma_df = rolling_average(price_df, sma_lag, max_number_of_na)
     relative_sma_df = sma_df / price_df.fillna(method='ffill')
     return relative_sma_df
 
 
-def rolling_average(data_df: pd.DataFrame, avg_lag: int, allowed_number_na: int = 5) -> pd.DataFrame:
-    """Assumes data_df is a DataFrame filled data as values, tickers as column names and observation dates
-    as index. Assumes that avg_lag and allowed_number_na are int..
-    Returns a DataFrame with the simple moving average (SMA)."""
+def rolling_average(data_df: pd.DataFrame, avg_lag: int, max_number_of_na: {int, None}=5) -> pd.DataFrame:
+    """
+    Calculates a rolling average. If nan, value is rolled forward except when number of consecutive nan exceeds
+    max_number_of_na.
+    :param data_df: pandas.DataFrame
+    :param avg_lag: int
+    :param max_number_of_na: int (default None i.e. all nan are rolled forward)
+    :return: pandas.DataFrame
+    """
     if avg_lag < 1:
         raise ValueError("avg_lag needs to be an 'int' larger or equal to 1")
-    rolling_avg = data_df.rolling(window=avg_lag, min_periods=allowed_number_na).mean()
-    # before price starts publishing, value should be nan regardless of data_availability_threshold
-    adjustment_df = data_df.fillna(method='ffill').rolling(window=avg_lag).mean().isnull()
-    adjustment_df = np.where(adjustment_df, np.nan, 1)
-    rolling_avg *= adjustment_df
-    return rolling_avg
+    original_index = data_df.index
+    rolling_avg_df = pd.DataFrame(index=original_index)
+
+    # for each column, remove nan and calculate a rolling moving average
+    for col_name in list(data_df):
+        column = data_df[col_name].dropna().rolling(window=avg_lag).mean()
+        rolling_avg_df = rolling_avg_df.join(column)
+
+    # roll forward when value is nan
+    rolling_avg_df.fillna(method='ffill', inplace=True)
+
+    # set value to nan if the number of consecutive nan exceeds max_number_of_na
+    if max_number_of_na:
+        adjustment_df = data_df.rolling(window=max_number_of_na + 1, min_periods=1).mean()
+        eligibility_df = pd.DataFrame(data=np.where(adjustment_df.isna(), np.nan, 1),
+                                      index=rolling_avg_df.index,
+                                      columns=rolling_avg_df.columns)
+        rolling_avg_df = rolling_avg_df * eligibility_df
+    return rolling_avg_df
 
 
 def rolling_drawdown(price_df: pd.DataFrame, look_back_period: int = None) -> pd.DataFrame:
