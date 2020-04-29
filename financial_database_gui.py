@@ -14,6 +14,7 @@ from models_db import Underlying
 from financial_database import YahooFinanceFeeder, FinancialDatabase
 from config_database import my_database_name, excel_ticker_folder, data_request_folder
 from excel_tools import save_df, format_requested_data_workbook
+from general_tools import list_grouper, progression_bar
 
 __DEFAULT_FONT__ = ("Arial", 11)
 __DEFAULT_BOLD_FONT__ = __DEFAULT_FONT__ + ('bold', )
@@ -107,7 +108,12 @@ class _InputWindow(Toplevel):
             action = self.parent.action_combo.get()
             fin_db = YahooFinanceFeeder(my_database_name)  # use to add, refresh and delete data
             if action == 'Add underlying':
-                fin_db.add_underlying(self.result)
+                counter = 1
+                list_of_ticker_list = list_grouper(self.result, 15)
+                for ticker_sub_list in list_of_ticker_list:
+                    progression_bar(counter, len(list_of_ticker_list))
+                    fin_db.add_underlying(ticker_sub_list)
+                    counter += 1
             elif action == 'Refresh underlying':
                 fin_db.refresh_data_for_tickers(self.result)
             elif action == 'Delete underlying':
