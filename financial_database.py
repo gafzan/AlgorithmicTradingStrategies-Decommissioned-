@@ -1186,7 +1186,14 @@ def main():
     excel_db.insert_data_to_database()
 
 
+def add_futures():
+    bbg_fin_db = BloombergFeeder(my_database_name)
+    generic_futures_ticker = 'GC1 COMDTY'
+    futures_tickers = bbg_fin_db.bbg_con.get_futures_chain(generic_futures_ticker)
+    bbg_fin_db.add_underlying(futures_tickers)
+
+
 if __name__ == '__main__':
-    main()
+    add_futures()
 
 
