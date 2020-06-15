@@ -7,14 +7,14 @@ import logging
 # my own modules
 from financial_database import FinancialDatabase
 from config_database import my_database_name
-from index_signal import Signal
+from index_signal import _Signal
 from index_weight import _Weight
 from finance_tools import index_calculation
 from dataframe_tools import select_rows_from_dataframe_based_on_sub_calendar
 
 # Logger
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 formatter = logging.Formatter('%(asctime)s : %(module)s : %(funcName)s : %(message)s')
 stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
@@ -31,6 +31,7 @@ class Basket:
         self.dividend_tax = dividend_tax
 
     def basket_prices(self, start_date: {date, datetime}=None, end_date: {date, datetime}=None):
+        logger.debug('Get basket price.')
         financial_database_handler = FinancialDatabase(my_database_name, False)
         if self.total_return:
             return financial_database_handler.get_total_return_df(self.tickers, start_date, end_date, self.dividend_tax,
@@ -75,20 +76,23 @@ class Index(Basket):
 
     def _check_before_back_test(self):
         if self.signal is None:
-            self.signal = Signal(ticker_list=self.tickers)  # default signal
+            self.signal = _Signal(ticker_list=self.tickers)  # default signal
         if self.weight is None:
             raise ValueError('No weight assigned.')
 
     def get_back_test(self, end_date: {date, datetime}=None, return_index_only: bool = True):
-        back_test = self._get_back_test_or_weight_df(True, end_date)
+        logger.debug('Get back test.')
+        back_test = self._get_index_back_test_or_weight_df(True, end_date)
         if return_index_only:
             return back_test[['index']]
         return back_test
 
     def get_weight_df(self, end_date: {date, datetime}=None):
-        return self._get_back_test_or_weight_df(True, end_date)
+        logger.debug('Get weight.')
+        return self._get_index_back_test_or_weight_df(True, end_date)
 
-    def _get_back_test_or_weight_df(self, get_back_test: bool, end_date: {date, datetime}=None):
+    # TODO get_back_test?
+    def _get_index_back_test_or_weight_df(self, get_index_back_test: bool, end_date: {date, datetime}=None):
         # handle the start and end date
         start_date = self.rebalancing_calendar[0] - BDay(5)
         if end_date is not None and np.datetime64(end_date) <= np.datetime64(self.rebalancing_calendar[0]):
@@ -101,9 +105,11 @@ class Index(Basket):
         # adjust rebalance calendar by moving one business day ahead in the underlying price calendar
         rebalancing_calendar = self.adjust_rebalance_calendar(self.rebalancing_calendar, underlying_price_df.index)
 
-        # calculate the signal and if there is no observation calendar assigned to the signal assign a default one
+        # if there is no observation calendar assigned to the signal assign a default one
         if self.signal.signal_observation_calendar is None:
             self.signal.signal_observation_calendar = underlying_price_df.index
+
+        # calculate the signal
         signal_df = self.signal.get_signal_df()
 
         # calculate the weights
@@ -111,7 +117,8 @@ class Index(Basket):
         weight_df = self.weight.get_weights()
         weight_df = select_rows_from_dataframe_based_on_sub_calendar(weight_df, rebalancing_calendar)
 
-        if get_back_test:
+        if get_index_back_test:
+            logger.debug('Calculates index.')
             return index_calculation(underlying_price_df, weight_df, self.transaction_cost, self.index_fee,
                                      self.initial_amount)
         else:
@@ -124,6 +131,7 @@ class Index(Basket):
             -> pd.DatetimeIndex:
         """Assumes that rebalance_calendar and daily_calendar are of type DatetimeIndex. If a rebalance date does not
         exist in daily_calendar, pick the following day. Returns a DatetimeIndex."""
+        logger.info('Adjusts rebalancing calendar (this is too slow) ...')
         date_is_in_cal = np.array(np.in1d(np.array(rebalance_calendar.values, dtype='datetime64[D]'),
                                           np.array(daily_calendar.values, dtype='datetime64[D]')))
         adjusted_date_list = []
@@ -136,6 +144,7 @@ class Index(Basket):
                     max(daily_calendar,
                         key=lambda x: min((x - rebalance_calendar[i]).days, 0))
                 )
+        logger.info('Done with rebalancing calendar adjustment.')
         return pd.DatetimeIndex(adjusted_date_list)
 
     @property
@@ -144,7 +153,7 @@ class Index(Basket):
 
     @signal.setter
     def signal(self, signal):
-        if issubclass(type(signal), Signal) or isinstance(signal, Signal):
+        if issubclass(type(signal), _Signal) or isinstance(signal, _Signal):
             self._signal = signal
         else:
             raise ValueError('Needs to be an object from Signal class or a subclass of class Signal.')
