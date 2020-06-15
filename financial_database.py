@@ -1,7 +1,7 @@
 """
 financial_database.py
 """
-from sqlalchemy import create_engine, and_
+from sqlalchemy import create_engine, and_, func
 from sqlalchemy.orm import sessionmaker
 import logging
 import yfinance
@@ -18,6 +18,7 @@ from general_tools import capital_letter_no_blanks, list_grouper, extend_dict, r
 from dataframe_tools import select_rows_from_dataframe_based_on_sub_calendar
 from config_database import my_database_name, excel_files_to_feed_database_folder
 from excel_tools import load_df
+from bloomberg import BloombergConnection
 
 # Logger
 logger = logging.getLogger(__name__)
@@ -193,63 +194,113 @@ class FinancialDatabase:
         """Assumes tickers is a list of strings. For each ticker, method assign to the Underlying table 1) latest
         observation date, 2) latest observation date with value, 3) oldest observation date and 4) first ex-dividend
         date (if any)."""
-        logger.debug('Updating oldest and latest observation date and first ex-dividend date for {} ticker(s).'
-                     '\nTicker(s): %s'.format(len(tickers)) % ', '.join(tickers))
-        underlying_id_list = self.get_ticker_underlying_attribute_dict(tickers, Underlying.id).values()
-        ticker_counter = 0  # only used for the logger
-        for underlying_id in underlying_id_list:
-            query_underlying = self.session.query(Underlying).filter(Underlying.id == underlying_id).first()
-            # check dividend history
-            if not query_underlying.has_dividend_history:
-                # see if there are any newly recorded ex-dividend dates.
-                query_dividend_amount_ex_dividend_date = self.session\
-                    .query(Dividend.dividend_amount,
-                           Dividend.ex_div_date)\
-                    .filter(Dividend.underlying_id == underlying_id)
-                if query_dividend_amount_ex_dividend_date.count() > 0:
-                    logger.debug("Setting dividend history status for {} to True.".format(tickers[ticker_counter]))
-                    query_underlying.has_dividend_history = True
 
-                    # find and record the first ex-dividend date
-                    first_ex_div_date = query_dividend_amount_ex_dividend_date.order_by(Dividend.ex_div_date).first()[1]
-                    logger.debug("First ex-dividend date for {} is {}.".format(tickers[ticker_counter],
-                                                                               str(first_ex_div_date)[:10]))
-                    query_underlying.first_ex_div_date = date(year=first_ex_div_date.year,
-                                                              month=first_ex_div_date.month,
-                                                              day=first_ex_div_date.day)
-            # set the latest observation date
-            query_obs_date = self.session.query(ClosePrice.obs_date).filter(ClosePrice.underlying_id == underlying_id)
-            try:
-                latest_obs_date = query_obs_date.order_by(ClosePrice.obs_date.desc()).first()[0]
-                logger.debug('Setting latest observation date for {} to {}.'.format(tickers[ticker_counter],
-                                                                                    str(latest_obs_date)[:10]))
-            except TypeError:  # to handle 'NoneType' where object is not subscriptable
-                latest_obs_date = None
-                logger.warning('Failed to set latest observation date for {}.'.format(tickers[ticker_counter]))
-            query_underlying.latest_observation_date = latest_obs_date
-
-            # set the latest observation date with value
-            query_obs_date_with_value = query_obs_date.filter(ClosePrice.close_quote.isnot(None))
-            try:
-                latest_obs_date_with_values = query_obs_date_with_value.order_by(ClosePrice.obs_date.desc()).first()[0]
-                logger.debug('Setting latest observation date with value for {} to {}.'.format(tickers[ticker_counter],
-                                                                                               str(latest_obs_date_with_values)[:10]))
-            except TypeError:  # to handle 'NoneType' where object is not subscriptable
-                latest_obs_date_with_values = None
-                logger.warning('Failed setting latest observation date with value for {}.'.format(tickers[ticker_counter]))
-            query_underlying.latest_observation_date_with_values = latest_obs_date_with_values
-
-            # setting oldest observation date
-            try:
-                oldest_obs_date = query_obs_date_with_value.order_by(ClosePrice.obs_date).first()[0]
-                logger.debug('Setting oldest observation date with value for {} to {}.'.format(tickers[ticker_counter],
-                                                                                               str(oldest_obs_date)[:10]))
-            except TypeError:  # to handle 'NoneType' where object is not subscriptable
-                oldest_obs_date = None
-                logger.warning('Faild setting oldest observation date with value for {}.'.format(tickers[ticker_counter]))
-            query_underlying.oldest_observation_date = oldest_obs_date
-            ticker_counter += 1
+        logger.info('Updating oldest and latest observation date and first e-dividend date for {} ticker(s).'.format(len(tickers)))
+        underlying_id_list = list(self.get_ticker_underlying_attribute_dict(tickers, Underlying.id).values())
+        self._update_dividend_info(underlying_id_list)
+        self._update_obs_date(underlying_id_list)
         self.session.commit()
+        return
+
+    def _update_dividend_info(self, underlying_id_list: list) -> None:
+        """
+        For all underlyings represented by the underlying id in the given list, set the oldest ex-dividend date in the
+        database.
+        :param underlying_id_list: list of int
+        :return: None
+        """
+        logger.debug('Updating oldest ex-dividend date and dividend paying status.')
+
+        # initialize the list that will store the results from the query
+        oldest_ex_div_date = []
+
+        for underlying_id_sub_list in list_grouper(underlying_id_list, 500):
+            # query the oldest ex-dividend date
+            sub_query_oldest_div_date = self.session.query(
+                Dividend.underlying_id,
+                func.min(Dividend.ex_div_date)
+            ).group_by(
+                Dividend.underlying_id
+            ).filter(
+                Dividend.underlying_id.in_(underlying_id_sub_list)
+            ).all()
+            oldest_ex_div_date.extend(sub_query_oldest_div_date)
+
+        # create a dictionary containing a tuple (keys = underlying id, values = oldest ex-dividend date)
+        underlying_id_oldest_ex_div_date_dict = {tup[0]: tup[1] for tup in oldest_ex_div_date}
+
+        # update the database
+        for underlying_id in list(underlying_id_oldest_ex_div_date_dict.keys()):
+            self.session.query(
+                Underlying
+            ).filter(
+                Underlying.id == underlying_id
+            ).update(
+                {'first_ex_div_date': underlying_id_oldest_ex_div_date_dict[underlying_id],
+                 'has_dividend_history': True}
+            )
+        logger.debug('Done with updating ex dividend dates.')
+        return
+
+    def _update_obs_date(self, underlying_id_list: list) -> None:
+        """
+        For all underlyings represented by the underlying id in the given list, set the oldest, latest and latest with
+        value observation date.
+        database.
+        :param underlying_id_list: list of int
+        :return: None
+        """
+        logger.debug('Updating oldest and latest observation date.')
+
+        # initialize the list that will store the results from the queries
+        max_min_obs_date = []
+        max_obs_date_with_values = []
+
+        for underlying_id_sub_list in list_grouper(underlying_id_list, 500):
+            # first query the oldest and latest observation date
+            sub_query_max_min_obs_date = self.session.query(
+                ClosePrice.underlying_id,
+                func.min(ClosePrice.obs_date),
+                func.max(ClosePrice.obs_date)
+            ).group_by(
+                ClosePrice.underlying_id
+            ).filter(
+                ClosePrice.underlying_id.in_(underlying_id_sub_list)
+            ).all()
+
+            # also query the observation dates with recorded close price (i.e. not nan)
+            sub_query_max_obs_date_with_value = self.session.query(
+                ClosePrice.underlying_id,
+                func.max(ClosePrice.obs_date)
+            ).group_by(
+                ClosePrice.underlying_id
+            ).filter(
+                ClosePrice.underlying_id.in_(underlying_id_sub_list),
+                ClosePrice.close_quote.isnot(None)
+            ).all()
+            max_min_obs_date.extend(sub_query_max_min_obs_date)
+            max_obs_date_with_values.extend(sub_query_max_obs_date_with_value)
+
+        # create a dictionary containing a tuple: keys = underlying id, values = (oldest obs. date, latest obs. date,
+        # latest obs. date with value)
+        underlying_id_max_min_obs_date_dict = {tup[0]: (tup[1], tup[2]) for tup in max_min_obs_date}
+        underlying_id_max_obs_date_with_value_dict = {tup[0]: tup[1] for tup in max_obs_date_with_values}
+        underlying_obs_date_dict = {underlying_id: underlying_id_max_min_obs_date_dict[underlying_id]
+                                                   + (underlying_id_max_obs_date_with_value_dict[underlying_id], )
+                                    for underlying_id in list(underlying_id_max_min_obs_date_dict.keys())}
+
+        # update the database
+        for underlying_id in list(underlying_obs_date_dict.keys()):
+            self.session.query(
+                Underlying
+            ).filter(
+                Underlying.id == underlying_id
+            ).update(
+                {'latest_observation_date': underlying_obs_date_dict[underlying_id][1],
+                 'latest_observation_date_with_values': underlying_obs_date_dict[underlying_id][2],
+                 'oldest_observation_date': underlying_obs_date_dict[underlying_id][0]}
+            )
+        logger.debug('Done with updating observation dates.')
         return
 
     # ------------------------------------------------------------------------------------------------------------------
@@ -366,8 +417,10 @@ class FinancialDatabase:
             pass
         if len(unique_fx_ticker_list) == 0:
             return values_df
-        fx_total_df = self.get_close_price_df(unique_fx_ticker_list)
+        logger.debug('Download FX data.')
+        fx_total_df = self.get_close_price_df(unique_fx_ticker_list, start_date=values_df.index[0], end_date=values_df.index[-1])
         fx_quote_for_each_ticker_df = select_rows_from_dataframe_based_on_sub_calendar(fx_total_df, values_df.index)
+        logger.debug('Create the FX DataFrame.')
         fx_quote_for_each_ticker_df = pd.DataFrame\
             (
                 {
@@ -446,6 +499,11 @@ class FinancialDatabase:
         """Assumes that ticker is either a string or a list and convert_to_list is bool. Returns a string or a list
         of strings where all the strings have capital letters and blanks have been replaced with '_'."""
         ticker = capital_letter_no_blanks(ticker)
+        if isinstance(ticker, list):
+            adj_tickers = [tick.upper() for tick in ticker]
+            ticker = adj_tickers
+        else:
+            ticker = ticker.upper()
         if isinstance(ticker, list) and sort:
             ticker.sort()
         if isinstance(ticker, str) and convert_to_list:
@@ -595,6 +653,23 @@ class _DataFeeder(FinancialDatabase):
         """Populate the dividend table with ex-dividend dates and dividend amounts."""
         logger.debug('Refresh dividends for {} ticker(s)'.format(len(ticker_list))
                      + logger_time_interval_message(start_date, end_date))
+
+        # remove the tickers of non dividend paying assets
+        excluded_underlying_types = ['INDEX', 'FUTURE']
+        query_eligible_tickers = self.session.query(
+            Underlying.ticker
+        ).filter(
+            and_(
+                Underlying.ticker.in_(ticker_list),
+                ~Underlying.underlying_type.in_(excluded_underlying_types)
+            )
+        ).all()
+
+        ticker_list = [tup[0] for tup in query_eligible_tickers]  # list of the eligible tickers
+        if len(ticker_list) == 0:
+            logger.info('All underlyings are of type %s.' % ' or '.join(ticker_list))
+            return
+
         dividend_df = self._retrieve_dividend_df(ticker_list, start_date, end_date)
         if dividend_df is None or dividend_df.empty:
             return
@@ -674,7 +749,8 @@ class YahooFinanceFeeder(_DataFeeder):
                                     city=ticker_info.get('city', default_str),
                                     address=ticker_info.get('address1', default_str),
                                     description=ticker_info.get('longBusinessSummary', default_str),
-                                    website=ticker_info.get('website', default_str))
+                                    website=ticker_info.get('website', default_str),
+                                    exchange=ticker_info.get('exchange', default_str))
             underlying_list.append(underlying)
             counter += 1
         logger.debug('Append {} row(s) to the Underlying table in the database.'.format(len(underlying_list)))
@@ -718,7 +794,7 @@ class YahooFinanceFeeder(_DataFeeder):
         if dividend_amount_total_df is None or dividend_amount_total_df.empty:
             return
         # add comment, name of data source and rename and reshuffle the columns
-        dividend_amount_total_df['comment'] = 'Loaded at {}'.format(str(date.today()))
+        dividend_amount_total_df['comment'] = 'Loaded at {}'.format(str(datetime.today())[:19])
         dividend_amount_total_df['data_source'] = 'YAHOO_FINANCE'
         dividend_amount_total_df.rename(columns={'Date': 'ex_div_date', 'Dividends': 'dividend_amount'}, inplace=True)
         return dividend_amount_total_df[['ex_div_date', 'dividend_amount', 'comment', 'data_source', 'underlying_id']]
@@ -763,10 +839,10 @@ class YahooFinanceFeeder(_DataFeeder):
         # clean up by removing NaN and zeros
         yf_historical_data_unstacked_clean_df = yf_historical_data_unstacked_df[
             pd.notnull(yf_historical_data_unstacked_df['value'])].copy()  # remove rows with NaN in data column
-        yf_historical_data_unstacked_clean_df = yf_historical_data_unstacked_clean_df[
-            yf_historical_data_unstacked_clean_df['value'] != 0].copy()  # remove rows with 0 in data column
+        # yf_historical_data_unstacked_clean_df = yf_historical_data_unstacked_clean_df[
+        #     yf_historical_data_unstacked_clean_df['value'] != 0].copy()  # remove rows with 0 in data column
         yf_historical_data_unstacked_clean_df['data_type'] = yf_historical_data_unstacked_clean_df['data_type'].str.lower()
-        yf_historical_data_unstacked_clean_df = yf_historical_data_unstacked_clean_df[yf_historical_data_unstacked_clean_df['data_type'].isin(['open', 'high', 'low', 'close'])].copy()
+        yf_historical_data_unstacked_clean_df = yf_historical_data_unstacked_clean_df[yf_historical_data_unstacked_clean_df['data_type'].isin(['open', 'high', 'low', 'close', 'volume'])].copy()
         yf_historical_data_unstacked_clean_df['data_type'] = yf_historical_data_unstacked_clean_df['data_type'].astype(str) + '_quote'
         return yf_historical_data_unstacked_clean_df[['data_type', 'obs_date', 'value', 'comment', 'data_source',
                                                       'underlying_id']]
@@ -825,7 +901,7 @@ class ExcelFeeder(_DataFeeder):
         self.initialdir = initialdir
         self._eligible_sheet_names = [Underlying.__tablename__]
         self._eligible_sheet_names.extend([data_table.__tablename__ for data_table in self._data_table_list])
-        self._eligible_col_names_underlying = ["ticker", "underlying_type", "long_name", "short_name", "sector", "industry", "country", "city", "address", "currency", "description", "website"]
+        self._eligible_col_names_underlying = ["ticker", "underlying_type", "long_name", "short_name", "sector", "industry", "country", "city", "address", "currency", "description", "website", "exchange"]
         self._dataframe_sheet_name_dict = {data_table.__tablename__: None for data_table in self._data_table_list}
         self._dataframe_sheet_name_dict.update({Underlying.__tablename__: None})
         self._delete_dates_between_start_end = False
@@ -927,7 +1003,8 @@ class ExcelFeeder(_DataFeeder):
                                     city=capital_letter_no_blanks(underlying_df['city'].values[0]),
                                     address=underlying_df['address'].values[0],
                                     description=underlying_df['description'].values[0],
-                                    website=underlying_df['website'].values[0])
+                                    website=underlying_df['website'].values[0],
+                                    exchange=underlying_df['exchange'].values[0])
             underlying_list.append(underlying)
         logger.debug('Append {} row(s) to the Underlying table in the database.'.format(len(underlying_list)))
         self.session.add_all(underlying_list)
@@ -962,7 +1039,6 @@ class ExcelFeeder(_DataFeeder):
             value_sub_df = value_sub_df.unstack().reset_index()
             value_sub_df.columns = ['ticker', 'obs_date', 'value']
             value_sub_df['data_type'] = data_table.__valuename__
-            value_sub_df = value_sub_df[value_sub_df['value'] != 0].copy()
             if value_df is None:
                 value_df = value_sub_df.copy()
             else:
@@ -977,6 +1053,119 @@ class ExcelFeeder(_DataFeeder):
 
     def __repr__(self):
         return f"<ExcelFeeder(name = {self.database_name})>"
+
+
+class BloombergFeeder(_DataFeeder):
+
+    def __init__(self, database_name: str, database_echo: bool=False, bbg_echo: bool=True):
+        super().__init__(database_name, database_echo)
+        self.bbg_con = BloombergConnection(bbg_echo)
+
+    def _populate_underlying_table(self, ticker_list: list)->None:
+        fields = ['SECURITY_TYP2', 'SECURITY_NAME', 'SHORT_NAME', 'GICS_SECTOR_NAME', 'GICS_INDUSTRY_NAME',
+                  'COUNTRY_FULL_NAME', 'CITY_OF_DOMICILE', 'CRNCY', 'CIE_DES', 'COMPANY_WEB_ADDRESS', 'EXCHANGE']
+        underlying_info = self.bbg_con.get_underlying_information(ticker_list, fields)
+        default_str = 'N/A'  # in case attribute does not exist
+        underlying_info.replace(to_replace='nan', value=default_str, inplace=True)
+        underlying_list = []
+        counter = 1
+        for ticker in list(underlying_info.index):
+            progression_bar(counter, underlying_info.shape[0])
+            underlying = Underlying(ticker=ticker,
+                                    underlying_type=underlying_info.loc[ticker, 'SECURITY_TYP2'].upper(),
+                                    long_name=underlying_info.loc[ticker, 'SECURITY_NAME'],
+                                    short_name=underlying_info.loc[ticker, 'SHORT_NAME'],
+                                    sector=underlying_info.loc[ticker, 'GICS_SECTOR_NAME'].upper().replace(' ', '_'),
+                                    industry=underlying_info.loc[ticker, '_GICS_INDUSTRY_NAME'].upper().replace(' ', '_'),
+                                    currency=underlying_info.loc[ticker, 'CRNCY'].upper().replace(' ', '_'),
+                                    city=underlying_info.loc[ticker, 'CITY_OF_DOMICILE'].upper().replace(' ', '_'),
+                                    address=underlying_info.loc[ticker, 'COMPANY_WEB_ADDRESS'],
+                                    description=underlying_info.loc[ticker, 'CIE_DES'],
+                                    website=underlying_info.loc[ticker, 'COMPANY_WEB_ADDRESS'])
+            underlying_list.append(underlying)
+            counter += 1
+
+        logger.debug('Append {} row(s) to the Underlying table in the database.'.format(len(underlying_list)))
+        self.session.add_all(underlying_list)
+
+        # for all the tickers that are futures, adjust the description to include the expiry date
+        # make query to the database
+        query_future_tickers = self.session.query(
+            Underlying.ticker
+        ).filter(
+            and_(
+                Underlying.underlying_type == 'FUTURE',
+                Underlying.ticker.in_(ticker_list)
+            )
+        ).all()
+
+        # list of the tickers that are futures
+        future_tickers = [tup[0] for tup in query_future_tickers]
+
+        # get the expiry date for all the futures from Bloomberg
+        ex_dates_bbg = self.bbg_con.get_underlying_information(future_tickers, 'LAST_TRADEABLE_DT')
+
+        # get the underlying id for all the futures from the database
+        ticker_underlying_id_dict = self.get_ticker_underlying_attribute_dict(future_tickers, Underlying.id)
+
+        # loop through all the futures contracts and update the description
+        for future in future_tickers:
+            desc = 'EXPIRY ' + ex_dates_bbg.loc[future].values[0]
+            self.session.query(
+                Underlying
+            ).filter(
+                Underlying.id == ticker_underlying_id_dict[future]
+            ).update(
+                {'description': desc}
+            )
+
+        logger.debug('Commit the new Underlying rows.')
+        self.session.commit()
+
+    def _refresh_dividends(self, ticker_list: list, start_date: {date, datetime}=None, end_date: {date, datetime}=None):
+        logger.debug('Downloading dividend data from Bloomberg and reformat the DataFrame.')
+        ticker_underlying_id_dict = self.get_ticker_underlying_attribute_dict(ticker_list, Underlying.id)
+        dividend_amount_df = self.bbg_con.get_dividend_data(ticker_list, start_date, end_date, do_pivot=False)
+        if dividend_amount_df is None:
+            return
+        dividend_amount_df['comment'] = 'Loaded at {}.'.format(str(date.today()))
+        dividend_amount_df['data_source'] = 'BLOOMBERG'
+        dividend_amount_df['underlying_id'] = dividend_amount_df['ticker'].map(ticker_underlying_id_dict)
+        dividend_amount_df.rename(columns={'ex_date': 'ex_div_date'}, inplace=True)
+        dividend_amount_df['ex_div_date'] = pd.to_datetime(dividend_amount_df['ex_div_date'])
+        return dividend_amount_df[['ex_div_date', 'dividend_amount', 'comment', 'data_source', 'underlying_id']]
+
+    def _retrieve_open_high_low_close_volume_df(self, ticker_list: list, start_date: {date, datetime}, end_date: {date, datetime}):
+        logger.debug('Download OHLC and volume data from Bloomberg and reformat the DataFrame.')
+        fields = ['PX_OPEN', 'PX_HIGH', 'PX_LOW', 'PX_LAST', 'PX_VOLUME']
+        ohlc_volume_bbd_df = self.bbg_con.get_daily_data(ticker_list, fields, start_date, end_date)
+        if ohlc_volume_bbd_df.empty:
+            return
+        ohlc_volume_bbd_df = ohlc_volume_bbd_df.stack().reset_index().melt(['date', 'field'])  # 'reverse' pivot
+        ohlc_volume_bbd_df.rename(columns={'date': 'obs_date', 'field': 'data_type'}, inplace=True)  # same names as database
+
+        # add a column with the underlying id and remove the ticker column
+        ticker_underlying_id_dict = self.get_ticker_underlying_attribute_dict(ticker_list, Underlying.id)
+        ohlc_volume_bbd_df['underlying_id'] = ohlc_volume_bbd_df['ticker'].map(ticker_underlying_id_dict)
+        ohlc_volume_bbd_df.drop('ticker', inplace=True, axis=1)  # remove the ticker column
+
+        # clean up by removing nan and add more information columns
+        ohlc_volume_bbd_clean_df = ohlc_volume_bbd_df[pd.notnull(ohlc_volume_bbd_df['value'])].copy()  # remove NaN
+        field_name_dict = {'PX_OPEN': 'open_quote', 'PX_HIGH': 'high_quote', 'PX_LOW': 'low_quote', 'PX_LAST': 'close_quote',
+                           'PX_VOLUME': 'volume_quote'}
+        ohlc_volume_bbd_clean_df['data_type'] = ohlc_volume_bbd_clean_df['data_type'].map(field_name_dict)
+        ohlc_volume_bbd_clean_df['comment'] = 'Loaded at {}.'.format(str(date.today()))
+        ohlc_volume_bbd_clean_df['data_source'] = 'BLOOMBERG'
+        ohlc_volume_bbd_clean_df['obs_date'] = pd.to_datetime(ohlc_volume_bbd_clean_df['obs_date'])
+        return ohlc_volume_bbd_clean_df[['date_type', 'obs_date', 'value', 'comment', 'data_source', 'underlying_id']]
+
+    def reformat_tickers(self, ticker: {str, list}, convert_to_list=False, sort=False):
+        ticker = super().reformat_tickers(ticker, convert_to_list, sort)
+        ticker = self.bbg_con.add_bbg_ticker_suffix(ticker)
+        return ticker
+
+    def __repr__(self):
+        return f"<BloombergFeeder(name = {self.database_name})>"
 
 
 def logger_time_interval_message(start_date: {date, datetime}, end_date: {date, datetime}) -> str:
