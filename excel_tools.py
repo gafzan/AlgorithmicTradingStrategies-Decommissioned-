@@ -2,7 +2,6 @@
 excel_tools.py
 """
 import logging
-import sys
 from pathlib import Path
 
 import pandas as pd
@@ -12,11 +11,18 @@ from openpyxl.styles import Alignment, Font, PatternFill, Color
 from openpyxl.styles.borders import Border, Side
 from openpyxl.utils import get_column_letter
 
+# for main module
+from tkinter import *
+from tkinter import filedialog
+from finance_tools import return_and_risk_analysis
+from config_database import base_folder, back_test_folder
+
 # logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s : %(module)s : %(funcName)s : %(message)s')
 stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
-logger = logging.getLogger(__name__)
 logger.addHandler(stream_handler)
 
 __COLUMN_NAMES_FONT__ = Font(bold=True,
@@ -312,3 +318,29 @@ def basic_formatting(sheet, col, cell_formatting='0.00%', last_column_bold=False
         if last_column_bold and col == sheet.max_column and row != 1:
             cell.fill = PatternFill(patternType='solid', fgColor=Color(rgb='EBF1DE'))
             cell.font = Font(bold=True)
+
+
+def main_format_excel_workbook():
+    # chose excel file to format
+    Tk().withdraw()
+    excel_file_path = filedialog.askopenfile(initialdir=base_folder, title='Select excel file to format.').name
+
+    # get the underlying data
+    df = load_df(full_path=excel_file_path, sheet_name='result')
+    sheet_name_df_dict = return_and_risk_analysis(df, print_results=True, normalize=False)
+
+    # save the result
+    save_file_path = filedialog.asksaveasfile(initialdir=back_test_folder, title='Save excel file.',
+                                              filetypes=(("Excel files", "*.xlsx"), ("All files", "*.*"))).name
+    save_file_path += '.xlsx'
+    print(save_file_path)
+    logger.info('Saving results to excel: {}'.format(save_file_path))
+    save_df(list(sheet_name_df_dict.values()), full_path=save_file_path, sheet_name_list=list(sheet_name_df_dict.keys()))
+    logger.info('Formatting excel file...')
+    format_risk_return_analysis_workbook(save_file_path)
+    logger.info('Done!')
+
+
+if __name__ == '__main__':
+    main_format_excel_workbook()
+
