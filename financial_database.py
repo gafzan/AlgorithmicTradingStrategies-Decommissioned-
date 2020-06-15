@@ -498,7 +498,7 @@ class FinancialDatabase:
     def reformat_tickers(ticker: {str, list}, convert_to_list=False, sort=False) -> {str, list}:
         """Assumes that ticker is either a string or a list and convert_to_list is bool. Returns a string or a list
         of strings where all the strings have capital letters and blanks have been replaced with '_'."""
-        ticker = capital_letter_no_blanks(ticker)
+        # ticker = capital_letter_no_blanks(ticker)
         if isinstance(ticker, list):
             adj_tickers = [tick.upper() for tick in ticker]
             ticker = adj_tickers
@@ -667,7 +667,7 @@ class _DataFeeder(FinancialDatabase):
 
         ticker_list = [tup[0] for tup in query_eligible_tickers]  # list of the eligible tickers
         if len(ticker_list) == 0:
-            logger.info('All underlyings are of type %s.' % ' or '.join(ticker_list))
+            logger.info('All underlyings are of type %s.' % ' or '.join(excluded_underlying_types))
             return
 
         dividend_df = self._retrieve_dividend_df(ticker_list, start_date, end_date)
@@ -1076,7 +1076,7 @@ class BloombergFeeder(_DataFeeder):
                                     long_name=underlying_info.loc[ticker, 'SECURITY_NAME'],
                                     short_name=underlying_info.loc[ticker, 'SHORT_NAME'],
                                     sector=underlying_info.loc[ticker, 'GICS_SECTOR_NAME'].upper().replace(' ', '_'),
-                                    industry=underlying_info.loc[ticker, '_GICS_INDUSTRY_NAME'].upper().replace(' ', '_'),
+                                    industry=underlying_info.loc[ticker, 'GICS_INDUSTRY_NAME'].upper().replace(' ', '_'),
                                     currency=underlying_info.loc[ticker, 'CRNCY'].upper().replace(' ', '_'),
                                     city=underlying_info.loc[ticker, 'CITY_OF_DOMICILE'].upper().replace(' ', '_'),
                                     address=default_str,
@@ -1103,27 +1103,28 @@ class BloombergFeeder(_DataFeeder):
         # list of the tickers that are futures
         future_tickers = [tup[0] for tup in query_future_tickers]
 
-        # get the expiry date for all the futures from Bloomberg
-        ex_dates_bbg = self.bbg_con.get_underlying_information(future_tickers, 'LAST_TRADEABLE_DT')
+        if len(future_tickers):
+            # get the expiry date for all the futures from Bloomberg
+            ex_dates_bbg = self.bbg_con.get_underlying_information(future_tickers, 'LAST_TRADEABLE_DT')
 
-        # get the underlying id for all the futures from the database
-        ticker_underlying_id_dict = self.get_ticker_underlying_attribute_dict(future_tickers, Underlying.id)
+            # get the underlying id for all the futures from the database
+            ticker_underlying_id_dict = self.get_ticker_underlying_attribute_dict(future_tickers, Underlying.id)
 
-        # loop through all the futures contracts and update the description
-        for future in future_tickers:
-            desc = 'EXPIRY ' + ex_dates_bbg.loc[future].values[0]
-            self.session.query(
-                Underlying
-            ).filter(
-                Underlying.id == ticker_underlying_id_dict[future]
-            ).update(
-                {'description': desc}
-            )
+            # loop through all the futures contracts and update the description
+            for future in future_tickers:
+                desc = 'EXPIRY ' + ex_dates_bbg.loc[future].values[0]
+                self.session.query(
+                    Underlying
+                ).filter(
+                    Underlying.id == ticker_underlying_id_dict[future]
+                ).update(
+                    {'description': desc}
+                )
 
         logger.debug('Commit the new Underlying rows.')
         self.session.commit()
 
-    def _refresh_dividends(self, ticker_list: list, start_date: {date, datetime}=None, end_date: {date, datetime}=None):
+    def _retrieve_dividend_df(self, ticker_list: list, start_date: {date, datetime}=None, end_date: {date, datetime}=None):
         logger.debug('Downloading dividend data from Bloomberg and reformat the DataFrame.')
         ticker_underlying_id_dict = self.get_ticker_underlying_attribute_dict(ticker_list, Underlying.id)
         dividend_amount_df = self.bbg_con.get_dividend_data(ticker_list, start_date, end_date, do_pivot=False)
@@ -1158,7 +1159,7 @@ class BloombergFeeder(_DataFeeder):
         ohlc_volume_bbd_clean_df['comment'] = 'Loaded at {}.'.format(str(date.today()))
         ohlc_volume_bbd_clean_df['data_source'] = 'BLOOMBERG'
         ohlc_volume_bbd_clean_df['obs_date'] = pd.to_datetime(ohlc_volume_bbd_clean_df['obs_date'])
-        return ohlc_volume_bbd_clean_df[['date_type', 'obs_date', 'value', 'comment', 'data_source', 'underlying_id']]
+        return ohlc_volume_bbd_clean_df[['data_type', 'obs_date', 'value', 'comment', 'data_source', 'underlying_id']]
 
     def reformat_tickers(self, ticker: {str, list}, convert_to_list=False, sort=False):
         ticker = super().reformat_tickers(ticker, convert_to_list, sort)
@@ -1187,7 +1188,7 @@ def main():
 
 
 def add_futures():
-    bbg_fin_db = BloombergFeeder(my_database_name)
+    bbg_fin_db = BloombergFeeder(my_database_name, bbg_echo=False)
     generic_futures_ticker = 'GC1 COMDTY'
     futures_tickers = bbg_fin_db.bbg_con.get_futures_chain(generic_futures_ticker)
     bbg_fin_db.add_underlying(futures_tickers)
