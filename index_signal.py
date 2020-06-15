@@ -9,17 +9,17 @@ from finance_tools import rolling_average, realized_volatility
 from config_database import my_database_name
 
 
-class Signal:
+class _Signal:
     """Class definition of Signal."""
 
     def __init__(self, ticker_list: list = None, signal_observation_calendar: pd.DatetimeIndex = None,
                  eligibility_df: pd.DataFrame = None):
         # either assign eligibility_df or ticker_list and signal_observation_calendar
         if eligibility_df is None and ticker_list is not None:
-            self._ticker_list = ticker_list
+            self._ticker_list = FinancialDatabase.reformat_tickers(ticker=ticker_list, convert_to_list=True)
             self._signal_observation_calendar = signal_observation_calendar
         elif eligibility_df is not None and ticker_list is None and signal_observation_calendar is None:
-            self._ticker_list = list(eligibility_df)
+            self._ticker_list = FinancialDatabase.reformat_tickers(ticker=list(eligibility_df), convert_to_list=True)
             self._signal_observation_calendar = eligibility_df.index
         else:
             raise ValueError("Need to assign ticker_list or only eligibility_df.")
@@ -36,7 +36,7 @@ class Signal:
     def _get_eligibility_df(self) -> pd.DataFrame:
         if self.eligibility_df is None:
             # if eligibility DataFrame is not set, create a default one
-            # default eligibility just checks if price has been published for the past 5 days
+            # default eligibility just checks if price has been published for the past 10 days
             start_date = self.signal_observation_calendar[0] - BDay(10)
             end_date = self.signal_observation_calendar[-1]
             underlying_price_df = self._financial_database_handler.get_close_price_df(self.ticker_list, start_date,
@@ -69,7 +69,7 @@ class Signal:
 
     @ticker_list.setter
     def ticker_list(self, ticker_list: list):
-        self._ticker_list = ticker_list
+        self._ticker_list = FinancialDatabase.reformat_tickers(ticker=ticker_list, convert_to_list=True)
         self._eligibility_df = None  # reset the eligibility DataFrame
 
     @signal_observation_calendar.setter
@@ -99,14 +99,14 @@ class Signal:
             self._eligibility_df = eligibility_df
 
 
-class _PriceBasedSignal(Signal):
+class _PriceBasedSignal(_Signal):
     """Class definition of _PriceBasedSignal.
     Subclass of Signal. Overrides get_signal_df to check if price DataFrame has been assigned. Overrides the setters for
     ticker_list and signal_observation_calendar since they need to reset the price DataFrame."""
 
     def __init__(self, ticker_list: list, signal_observation_calendar: pd.DatetimeIndex,
                  eligibility_df: pd.DataFrame, total_return: bool, currency: str):
-        Signal.__init__(self, ticker_list, signal_observation_calendar, eligibility_df)
+        _Signal.__init__(self, ticker_list, signal_observation_calendar, eligibility_df)
         self._total_return = total_return
         self._currency = currency
         self._underlying_price_df = None  # DataFrame is assigned using the method _set_underlying_price_df
@@ -116,14 +116,15 @@ class _PriceBasedSignal(Signal):
         start_date = self.signal_observation_calendar[0] - BDay(self._bday_before_start_date_buffer)
         end_date = self.signal_observation_calendar[-1]
         if self.total_return:
-            self._underlying_price_df = self._financial_database_handler.get_total_return_df(self.ticker_list,
-                                                                                             start_date,
-                                                                                             end_date,
+            self._underlying_price_df = self._financial_database_handler.get_total_return_df(tickers=self.ticker_list,
+                                                                                             start_date=start_date,
+                                                                                             end_date=end_date,
                                                                                              currency=self.currency)
         else:
-            self._underlying_price_df = self._financial_database_handler.get_close_price_df(self.ticker_list,
-                                                                                            start_date,
-                                                                                            end_date, self.currency)
+            self._underlying_price_df = self._financial_database_handler.get_close_price_df(tickers=self.ticker_list,
+                                                                                            start_date=start_date,
+                                                                                            end_date=end_date,
+                                                                                            currency=self.currency)
 
     def get_signal_df(self) -> pd.DataFrame:
         if self.signal_observation_calendar is None:
@@ -153,27 +154,27 @@ class _PriceBasedSignal(Signal):
     def currency(self, currency: str):
         self._currency = currency
 
-    @Signal.ticker_list.setter
+    @_Signal.ticker_list.setter
     def ticker_list(self, ticker_list: list):
         self._ticker_list = ticker_list
         self._eligibility_df = None  # reset the eligibility DataFrame
         self._underlying_price_df = None  # reset the price DataFrame
 
-    @Signal.signal_observation_calendar.setter
+    @_Signal.signal_observation_calendar.setter
     def signal_observation_calendar(self, signal_observation_calendar: pd.DatetimeIndex):
         self._signal_observation_calendar = signal_observation_calendar
         self._eligibility_df = None  # reset the eligibility DataFrame
         self._underlying_price_df = None  # reset the price DataFrame
 
 
-class _RankSignal(Signal):
+class _RankSignal(_Signal):
     """Class definition of _RankSignal.
     Subclass of Signal."""
 
     def __init__(self, ticker_list: list, signal_observation_calendar: pd.DatetimeIndex, eligibility_df: pd.DataFrame,
                  rank_number: int, rank_fraction: float, descending: bool, include: bool):
         self._check_inputs(rank_number, rank_fraction)
-        Signal.__init__(self, ticker_list, signal_observation_calendar, eligibility_df)
+        _Signal.__init__(self, ticker_list, signal_observation_calendar, eligibility_df)
         self.rank_number = rank_number
         self.rank_fraction = rank_fraction
         self.descending = descending
@@ -298,8 +299,8 @@ class SimpleMovingAverageCrossSignal(_PriceBasedSignal):
         """Calculate the SMA crossover signal. Return a DataFrame.
         Given that eligibility_df shows 1, if SMA(lead) > SMA(lag) => 1 (bullish), else -1 (bearish) else 0."""
         # Calculate the SMA DataFrames and the signal before removal of NaN and eligibility constraints.
-        leading_sma_df = rolling_average(self._underlying_price_df, self._leading_window)
-        lagging_sma_df = rolling_average(self._underlying_price_df, self._lagging_window)
+        leading_sma_df = rolling_average(self._underlying_price_df, self._leading_window, max_number_of_na=None)
+        lagging_sma_df = rolling_average(self._underlying_price_df, self._lagging_window, max_number_of_na=None)
         signal_array = np.where(leading_sma_df > lagging_sma_df, 1, -1)
         sma_is_not_nan = ~(leading_sma_df + lagging_sma_df).isnull()
         signal_df = signal_array * sma_is_not_nan  # add 0 (neutral) if any SMA is NaN and apply the constraints
@@ -323,4 +324,8 @@ class SimpleMovingAverageCrossSignal(_PriceBasedSignal):
             self._lagging_window = int(max(leading_lagging_window))
             self._leading_lagging_window = leading_lagging_window
             self._bday_before_start_date_buffer = self._lagging_window + 10
+
+    def __repr__(self):
+        return '<SimpleMovingAverageCrossSignal(leading window = {} day(s), lagging window = {} day(s))>'\
+            .format(self._leading_window, self._lagging_window)
 
