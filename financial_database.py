@@ -1063,7 +1063,7 @@ class BloombergFeeder(_DataFeeder):
 
     def _populate_underlying_table(self, ticker_list: list)->None:
         fields = ['SECURITY_TYP2', 'SECURITY_NAME', 'SHORT_NAME', 'GICS_SECTOR_NAME', 'GICS_INDUSTRY_NAME',
-                  'COUNTRY_FULL_NAME', 'CITY_OF_DOMICILE', 'CRNCY', 'CIE_DES', 'COMPANY_WEB_ADDRESS', 'PRIMARY_EXCHANGE_NAME']
+                  'COUNTRY_FULL_NAME', 'CITY_OF_DOMICILE', 'CRNCY', 'CIE_DES', 'COMPANY_WEB_ADDRESS', 'EXCH_CODE']
         underlying_info = self.bbg_con.get_underlying_information(ticker_list, fields)
         default_str = 'N/A'  # in case attribute does not exist
         underlying_info.replace(to_replace='nan', value=default_str, inplace=True)
@@ -1077,12 +1077,13 @@ class BloombergFeeder(_DataFeeder):
                                     short_name=underlying_info.loc[ticker, 'SHORT_NAME'],
                                     sector=underlying_info.loc[ticker, 'GICS_SECTOR_NAME'].upper().replace(' ', '_'),
                                     industry=underlying_info.loc[ticker, 'GICS_INDUSTRY_NAME'].upper().replace(' ', '_'),
-                                    currency=underlying_info.loc[ticker, 'CRNCY'].upper().replace(' ', '_'),
+                                    country=underlying_info.loc[ticker, 'COUNTRY_FULL_NAME'].upper().replace(' ', '_'),
                                     city=underlying_info.loc[ticker, 'CITY_OF_DOMICILE'].upper().replace(' ', '_'),
                                     address=default_str,
+                                    currency=underlying_info.loc[ticker, 'CRNCY'].upper().replace(' ', '_'),
                                     description=underlying_info.loc[ticker, 'CIE_DES'],
                                     website=underlying_info.loc[ticker, 'COMPANY_WEB_ADDRESS'],
-                                    exchange=underlying_info.loc[ticker, 'PRIMARY_EXCHANGE_NAME'].upper().replace(' ', '_'))
+                                    exchange=underlying_info.loc[ticker, 'EXCH_CODE'].upper().replace(' ', '_'))
             underlying_list.append(underlying)
             counter += 1
 
