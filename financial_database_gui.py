@@ -109,13 +109,34 @@ class _InputWindow(Toplevel):
             fin_db = YahooFinanceFeeder(my_database_name)  # use to add, refresh and delete data
             if action == 'Add underlying':
                 counter = 1
-                list_of_ticker_list = list_grouper(self.result, 15)
+                batch_size = 15
+                list_of_ticker_list = list_grouper(self.result, batch_size)
+                tickers_not_available = []
                 for ticker_sub_list in list_of_ticker_list:
                     progression_bar(counter, len(list_of_ticker_list))
-                    fin_db.add_underlying(ticker_sub_list)
+                    try:
+                        fin_db.add_underlying(ticker_sub_list)
+                    except ValueError:
+                        logger.warning('One ticker is not available in Yahoo finance.')
+                        for ticker in ticker_sub_list:
+                            try:
+                                fin_db.add_underlying(ticker)
+                            except ValueError:
+                                logger.warning('{} does not exist as a ticker on Yahoo Finance.')
+                                tickers_not_available.append(ticker)
                     counter += 1
+                logger.info('Done with adding underlying(s) to database.')
+                if len(tickers_not_available) > 0:
+                    logger.warning('{} ticker(s) could not be added.\nTicker(s): %s'.format(len(tickers_not_available))
+                                   % ', '.join(tickers_not_available))
             elif action == 'Refresh underlying':
-                fin_db.refresh_data_for_tickers(self.result)
+                counter = 1
+                list_of_ticker_list = list_grouper(self.result, 100)
+                for ticker_sub_list in list_of_ticker_list:
+                    progression_bar(counter, len(list_of_ticker_list))
+                    fin_db.refresh_data_for_tickers(ticker_sub_list)
+                    counter += 1
+                logger.info('Done with refreshing underlying(s) in the database.')
             elif action == 'Delete underlying':
                 msg_before_delete = msg.askquestion('Warning', 'Are you sure you want to delete {} ticker(s) from the '
                                                                'database?'.format(len(self.result)), icon='warning')
