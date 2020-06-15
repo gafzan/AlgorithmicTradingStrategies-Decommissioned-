@@ -161,19 +161,19 @@ def calculate_rolling_future_index(tickers: list, start_date: datetime = None, e
             expiry_position_in_daily_calendar = daily_obs_calendar.get_loc(expiry_date)
             roll_end_date = daily_obs_calendar[expiry_position_in_daily_calendar - expiry_buffer_days]
         else:
-            last_roll = False
+            last_roll = True
             roll_end_date = daily_obs_calendar.values[-1]  # last observation date
         future_price_df = None  # initialize the price DataFrame
-        for term_strucutre_position in term_structure_position_list:  # loop through all positions accross the term structure
+        for term_structure_position in term_structure_position_list:  # loop through all positions accross the term structure
             # select the relevant closing prices
-            active_tickers = target_rolling_calendar[target_rolling_calendar['expiry_date']>=expiry_date].index.values
-            relevant_tickers = active_tickers[term_strucutre_position - 1: term_strucutre_position + 1]
+            active_tickers = target_rolling_calendar[target_rolling_calendar['expiry_date'] >= expiry_date].index.values
+            relevant_tickers = active_tickers[term_structure_position - 1: term_structure_position + 1]
             sub_future_price_df = fut_data.loc[prev__date:roll_end_date, relevant_tickers]  # select relevant prices
-            sub_future_price_df.columns = ['FUT_{}'.format(term_strucutre_position), 'CONTRACT_AFTER_FUT{}'.format(term_strucutre_position)]
+            sub_future_price_df.columns = ['FUT_{}'.format(term_structure_position), 'CONTRACT_AFTER_FUT_{}'.format(term_structure_position)]
 
             # add weight columns
-            weight = future_weight_dict[term_strucutre_position]
-            first_weight_col_name = 'FUT_{}'.format(term_strucutre_position) + '_WEIGHT'
+            weight = future_weight_dict[term_structure_position]
+            first_weight_col_name = 'FUT_{}'.format(term_structure_position) + '_WEIGHT'
             sub_future_price_df[first_weight_col_name] = weight
 
             # adjust the weight during the rolling period
@@ -190,7 +190,7 @@ def calculate_rolling_future_index(tickers: list, start_date: datetime = None, e
             sub_future_price_df[first_weight_col_name] = sub_future_price_df[first_weight_col_name].fillna(method='backfill')
 
             # calculate the weights of the following futures contract
-            sub_future_price_df['CONTRACT_AFTER_FUT{}'.format(term_strucutre_position) + '_WEIGHT'] = weight - sub_future_price_df.loc[:, first_weight_col_name]
+            sub_future_price_df['CONTRACT_AFTER_FUT_{}'.format(term_structure_position) + '_WEIGHT'] = weight - sub_future_price_df.loc[:, first_weight_col_name]
 
             # concatenate the results (add new columns)
             if future_price_df is None:
@@ -216,9 +216,9 @@ def calculate_rolling_future_index(tickers: list, start_date: datetime = None, e
 
     # calculate the rolling futures index
     future_price_return_df['INDEX_RETURN'] = 0
-    for term_strucutre_position in term_structure_position_list:
-        daily_return_values = future_price_return_df.filter(regex='FUT_{}$'.format(term_strucutre_position)).values()
-        daily_weight_values = future_price_return_df.filter(regex='FUT_{}_WEIGHT$'.format(term_strucutre_position)).shift().values  # shift the weights forward one day
+    for term_structure_position in term_structure_position_list:
+        daily_return_values = future_price_return_df.filter(regex='FUT_{}$'.format(term_structure_position)).values
+        daily_weight_values = future_price_return_df.filter(regex='FUT_{}_WEIGHT$'.format(term_structure_position)).shift().values  # shift the weights forward one day
         daily_weighted_return_df = pd.DataFrame(data=daily_return_values * daily_weight_values, index=future_price_return_df.index)
         future_price_return_df['INDEX_RETURN'] += daily_weighted_return_df.sum(axis=1)  # sum of Weight_i x Return_i
     future_price_return_df['INDEX'] = 1 + future_price_return_df.loc[:, 'INDEX_RETURN']  # 1 + daily returns
