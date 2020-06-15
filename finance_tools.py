@@ -84,6 +84,21 @@ def rolling_drawdown(price_df: pd.DataFrame, look_back_period: int = None) -> pd
     return drawdown_df
 
 
+def exponentially_weighted_return(price_df: pd.DataFrame, lambda_: float) -> pd.DataFrame:
+    """
+    Calculates the exponentially weighted returns
+    :param price_df: pd.DataFrame containing the closing levels
+    :param lambda_: the weight
+    :return: pd.DataFrame
+    """
+    price_return_df = price_df.pct_change()
+    price_return_df = price_return_df.iloc[1:, :]
+    number_days = price_return_df.shape[0]
+    exp_weighting_var = [np.exp(-lambda_ / number_days * (1 + t_day)) for t_day in range(number_days - 1, -1, -1)]
+    exp_weighting_s = pd.Series(index=price_return_df.index, data=exp_weighting_var)
+    return price_return_df.mul(exp_weighting_s, axis=0)
+
+
 def maximum_drawdown(price_df: pd.DataFrame, look_back_period: int = None) -> pd.Series:
     """Assumes that price_df is a DataFrame and look_back_period is an int. If look_back_period is not assigned, the
     'peak/maximum' will be observed continuously. Returns a Series containing the maximum drawdown for each underlying
@@ -232,7 +247,7 @@ def monthly_return_table(price_df: pd.DataFrame, include_first_monthly_return: b
 
 
 def return_and_risk_analysis(underlying_price_df: pd.DataFrame, has_benchmark=False, print_results=True,
-                             start_date=None, end_date=None) -> dict:
+                             start_date=None, end_date=None, normalize: bool = True) -> dict:
     """Assumes that underlying_price_df is a DataFrame with prices in each column and dates as index, has_benchmark is
     boolean. Calculates annual returns, annual volatility drawdown and return distributions.
     If has_benchmark is True (only works if there are two columns) function will return active return and information
@@ -247,7 +262,11 @@ def return_and_risk_analysis(underlying_price_df: pd.DataFrame, has_benchmark=Fa
         underlying_price_df = underlying_price_df[start_date:]
     if end_date:
         underlying_price_df = underlying_price_df[:end_date]
-    performance_df = underlying_price_df / underlying_price_df.iloc[0, :] * 100.0
+
+    if normalize:
+        performance_df = underlying_price_df / underlying_price_df.iloc[0, :] * 100.0
+    else:
+        performance_df = underlying_price_df
 
     # annual return
     rolling_1y_return_df = underlying_price_df.pct_change(252).dropna()
