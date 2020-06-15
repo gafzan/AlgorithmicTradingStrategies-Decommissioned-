@@ -170,7 +170,8 @@ class BloombergConnection:
         dividend_bbg_df = self._adjust_dividend_df(tickers, dividend_bbg_df, start_date, end_date, do_pivot)
         return dividend_bbg_df
 
-    def _adjust_dividend_df(self, tickers: list, dividend_df: pd.DataFrame, start_date: {datetime, None}, end_date: {datetime, None}, do_pivot: bool):
+    @staticmethod
+    def _adjust_dividend_df(tickers: list, dividend_df: pd.DataFrame, start_date: {datetime, None}, end_date: {datetime, None}, do_pivot: bool):
         """
         Adjusts and re-formats when applicable a DataFrame with dividend data
         :param tickers: can be a string or list of strings
@@ -256,7 +257,7 @@ class BloombergConnection:
         bulk_data_bbg = self.con.bulkref(generic_futures_index_ticker, 'FUT_CHAIN_LAST_TRADE_DATES',
                                          [('INCLUDE_EXPIRED_CONTRACTS', 'Y')])
         bulk_data_bbg = bulk_data_bbg[bulk_data_bbg['name'] == "Future's Ticker"]
-        futures_tickers = bulk_data_bbg['value'].values
+        futures_tickers = list(bulk_data_bbg['value'].values)
         return futures_tickers
 
     # TODO method to load fundamental data from companies
@@ -272,7 +273,7 @@ class BloombergConnection:
         input_date_str = str(input_date)
         day = input_date_str[8:10]
         month = input_date_str[5:7]
-        year = input_date[:4]
+        year = input_date_str[:4]
         return year + month + day
 
     def bbg_today(self):
