@@ -1063,7 +1063,7 @@ class BloombergFeeder(_DataFeeder):
 
     def _populate_underlying_table(self, ticker_list: list)->None:
         fields = ['SECURITY_TYP2', 'SECURITY_NAME', 'SHORT_NAME', 'GICS_SECTOR_NAME', 'GICS_INDUSTRY_NAME',
-                  'COUNTRY_FULL_NAME', 'CITY_OF_DOMICILE', 'CRNCY', 'CIE_DES', 'COMPANY_WEB_ADDRESS', 'EXCHANGE']
+                  'COUNTRY_FULL_NAME', 'CITY_OF_DOMICILE', 'CRNCY', 'CIE_DES', 'COMPANY_WEB_ADDRESS', 'PRIMARY_EXCHANGE_NAME']
         underlying_info = self.bbg_con.get_underlying_information(ticker_list, fields)
         default_str = 'N/A'  # in case attribute does not exist
         underlying_info.replace(to_replace='nan', value=default_str, inplace=True)
@@ -1079,9 +1079,10 @@ class BloombergFeeder(_DataFeeder):
                                     industry=underlying_info.loc[ticker, '_GICS_INDUSTRY_NAME'].upper().replace(' ', '_'),
                                     currency=underlying_info.loc[ticker, 'CRNCY'].upper().replace(' ', '_'),
                                     city=underlying_info.loc[ticker, 'CITY_OF_DOMICILE'].upper().replace(' ', '_'),
-                                    address=underlying_info.loc[ticker, 'COMPANY_WEB_ADDRESS'],
+                                    address=default_str,
                                     description=underlying_info.loc[ticker, 'CIE_DES'],
-                                    website=underlying_info.loc[ticker, 'COMPANY_WEB_ADDRESS'])
+                                    website=underlying_info.loc[ticker, 'COMPANY_WEB_ADDRESS'],
+                                    exchange=underlying_info.loc[ticker, 'PRIMARY_EXCHANGE_NAME'].upper().replace(' ', '_'))
             underlying_list.append(underlying)
             counter += 1
 
