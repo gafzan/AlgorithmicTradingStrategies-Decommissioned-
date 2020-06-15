@@ -29,6 +29,7 @@ class Underlying(Base):
     currency = Column(String)  # 'currency'
     description = Column(String)  # 'longBusinessSummary'
     website = Column(String)  # 'website'
+    exchange = Column(String)
     has_dividend_history = Column(Boolean, default=False)
     first_ex_div_date = Column(Date, nullable=True, default=None)
     latest_observation_date = Column(DateTime, nullable=True)
