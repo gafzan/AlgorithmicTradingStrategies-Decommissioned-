@@ -7,12 +7,33 @@ from datetime import datetime
 
 from matplotlib import pyplot as plt
 
+import logging
+
 # my modules
 from financial_database import FinancialDatabase
 from config_database import my_database_name
-from general_tools import progression_bar
+from general_tools import progression_bar_str
 
-# TODO add logger
+# logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s : %(module)s : %(funcName)s : %(message)s')
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+logger.addHandler(stream_handler)
+
+
+def clean_data(multivariate_data: pd.DataFrame):
+    """
+    Rolls all the N/A forward with the latest available value and then drops all of the N/A (i.e. all columns will start
+    at the same index position.
+    :param multivariate_data: DataFrame
+    :return: DataFrame
+    """
+    logger.debug('Clean the multivariate data for N/A.')
+    multivariate_data.fillna(method='ffill', inplace=True)  # roll all N/A forward
+    multivariate_data.dropna(inplace=True)  # remove rows with N/A
+    return multivariate_data
 
 
 def calculate_levered_strategy(strategy_returns: pd.DataFrame, volatility_target: float)->pd.DataFrame:
@@ -22,7 +43,7 @@ def calculate_levered_strategy(strategy_returns: pd.DataFrame, volatility_target
     :param volatility_target: float
     :return: DataFrame
     """
-
+    logger.debug('Apply a {} volatility target.'.format(str(100 * volatility_target) + '%'))
     realized_volatility = strategy_returns.rolling(strategy_returns.shape[0], min_periods=1).std()
     exposure = volatility_target / realized_volatility  # volatility target / realized volatility
     exposure.iloc[0, :] = 0
@@ -39,6 +60,7 @@ def calculate_arithmetic_return(multivariate_data: pd.DataFrame, return_lag: int
     :param return_lag: int (default = 1)
     :return: DataFrame
     """
+    logger.debug('Calculate the arithmetic returns.')
     arithmetic_returns = multivariate_data.pct_change(return_lag)
     arithmetic_returns.iloc[0, :] = 0
     return arithmetic_returns
@@ -54,8 +76,9 @@ def calculate_strategy_return(multivariate_price_data: pd.DataFrame, strategy_we
     :param volatility_target: float
     :return: DataFrame
     """
+    logger.debug('Calculate the strategy returns (weighted returns).')
     if not multivariate_price_data.index.equals(strategy_weights.index):
-        raise ValueError('The index for multivariate_price_data {} and strategy_weights {} are not the same'.format(multivariate_price_data.shape, strategy_weights.shape))
+        raise ValueError('The index for multivariate_price_data {} and strategy_weights {} are not the same.'.format(multivariate_price_data.shape, strategy_weights.shape))
 
     # calculate the strategy returns
     arithmetic_returns = calculate_arithmetic_return(multivariate_price_data)
@@ -76,7 +99,7 @@ def general_smoothing(multivariate_data: pd.DataFrame, lambda_1: float, lambda_2
     :param lambda_2: float
     :return: tuple containing 3 DataFrames: smoothed data, slope and deviation
     """
-
+    logger.debug('Perform general smoothing on a multivariate data set {}.'.format(multivariate_data.shape))
     # compute the smoothed time series
     smoothed_data = pd.DataFrame(index=multivariate_data.index, columns=[col_name + '_SMOOTHED' for col_name in list(multivariate_data)])
     smoothed_data.iloc[:2, :] = multivariate_data.iloc[:2, :].values
@@ -97,7 +120,6 @@ def general_smoothing(multivariate_data: pd.DataFrame, lambda_1: float, lambda_2
     # compute the deviation of the original data from the smoothed data
     deviation = multivariate_data - smoothed_data.values
     deviation.columns = [col_name + '_DEVIATION' for col_name in list(multivariate_data)]
-
     return smoothed_data, slope_data, deviation
 
 
@@ -110,7 +132,7 @@ def general_smoothing_drawdown_protection(multivariate_data: pd.DataFrame, lambd
     :param lambda_2: float
     :return: tuple containing 2 DataFrames: weights and cumulative strategy returns
     """
-
+    logger.debug('Calculate the weights and back test for the drawdown protection strategy.')
     # calculate a position signal: 1 if slope of smoothed time series is positive, else 0
     slope = general_smoothing(multivariate_data, lambda_1, lambda_2)[1]
     position_signal = slope.copy()
@@ -139,7 +161,7 @@ def triple_filter_signal(multivariate_data: pd.DataFrame, lambda_1_1: float, lam
     :param lambda_3_2: float (3rd smoothing)
     :return: tuple (DataFrame, DataFrame, DataFrame)
     """
-
+    logger.debug('Perform triple filter signal on a multivariate data set {}.'.format(multivariate_data.shape))
     # smooth the multivariate data twice
     smoothed_data = general_smoothing(multivariate_data, lambda_1_1, lambda_1_2)[0]
     smoothed_data_2, slope_2, deviation_2 = general_smoothing(smoothed_data, lambda_2_1, lambda_2_2)
@@ -177,7 +199,7 @@ def time_series_trend(multivariate_data: pd.DataFrame, lambda_1_1: float, lambda
     :param volatility_target: float
     :return: tuple (DataFrame, DataFrame)
     """
-
+    logger.info('Calculate the weights and back test for the time series trend strategy.')
     # calculate preliminary positions and normalized slopes and deviations using the triple filter signal
     position_tfs, slope_tfs, deviation_tfs = triple_filter_signal(multivariate_data, lambda_1_1, lambda_1_2, lambda_2_1,
                                                                   lambda_2_2, lambda_3_1, lambda_3_2)
@@ -212,7 +234,7 @@ def long_term_cross_sectional_trend(multivariate_data: pd.DataFrame, lambda_1_1:
     :param volatility_target: float
     :return: tuple (DataFrame, DataFrame)
     """
-
+    logger.info('Calculate the weights and back test for the long-term cross sectional trend strategy.')
     # calculate preliminary positions and normalized slopes and deviations using the triple filter signal
     position_tfs, slope_tfs, deviation_tfs = triple_filter_signal(multivariate_data, lambda_1_1, lambda_1_2, lambda_2_1,
                                                                   lambda_2_2, lambda_3_1, lambda_3_2)
@@ -240,7 +262,7 @@ def short_term_cross_sectional_trend(multivariate_data: pd.DataFrame, lambda_1_1
     :param volatility_target: float
     :return: tuple (DataFrame, DataFrame)
     """
-
+    logger.info('Calculate the weights and back test for the short-term cross sectional trend strategy.')
     # apply the drawdown protection algorithm
     weight_ddp, strategy_ddp = general_smoothing_drawdown_protection(multivariate_data, lambda_1_1, lambda_1_2)
 
@@ -274,7 +296,7 @@ def pairwise_difference(multivariate_data: pd.DataFrame)->pd.DataFrame:
     :param multivariate_data: DataFrame
     :return: DataFrame
     """
-
+    logger.debug('Calculate the pairwise difference in returns (used in the cross sectional reversion strategy).')
     # initialize the DataFrame that will store the values
     col_names = [col_name_2 + '_MINUS_' + col_name_1 for col_name_1 in list(multivariate_data) for col_name_2 in
                  list(multivariate_data) if col_name_1 != col_name_2]
@@ -282,8 +304,12 @@ def pairwise_difference(multivariate_data: pd.DataFrame)->pd.DataFrame:
     calendar = multivariate_data.index.values
 
     # for each pair of underlying instrument compute the pairwise difference in return
+    accumulated_progress = 0
     for t_i in range(multivariate_data.shape[0]):
-        progression_bar(t_i, multivariate_data.shape[0])
+        accumulated_progress += 1 / multivariate_data.shape[0]
+        if accumulated_progress > 0.1:
+            logger.info(progression_bar_str(t_i, multivariate_data.shape[0]))
+            accumulated_progress = 0
         pairwise_difference_i = multivariate_data.iloc[t_i, :].values \
                                        - multivariate_data.iloc[t_i, :].values[:, None]
         np.fill_diagonal(pairwise_difference_i, np.nan)  # set all the dialog values to N/A (easier to remove)
@@ -301,7 +327,7 @@ def cross_sectional_reversion(multivariate_data: pd.DataFrame, volatility_target
     :param volatility_target: float
     :return: tuple (DataFrame, DataFrame)
     """
-
+    logger.info('Calculate the weights and back test for the cross sectional reversion strategy.')
     # for each pair of underlying instrument compute the pairwise differences in returns
     arithmetic_returns = calculate_arithmetic_return(multivariate_data)
     pairwise_return_difference = pairwise_difference(arithmetic_returns)
@@ -338,6 +364,34 @@ def cross_sectional_reversion(multivariate_data: pd.DataFrame, volatility_target
     return strategy_weights, strategy_returns
 
 
+def retrieve_all_strategies(multivariate_data: pd.DataFrame, lambda_1_1: float, lambda_1_2: float, lambda_2_1: float,
+                            lambda_2_2: float, lambda_3_1: float, lambda_3_2: float, volatility_target: float = None):
+    """
+    Calculates the weights and returns of four algorithmic strategies: time series trend (TST), cross sectional
+    reversion (MR), long-term cross sectional trend (LTXT) and short-term cross sectional trend (STXT).
+    :param multivariate_data: DataFrame
+    :param lambda_1_1: float used in TST, LTXT and STXT
+    :param lambda_1_2: float used in TST, LTXT and STXT
+    :param lambda_2_1: float used in TST, LTXT and STXT
+    :param lambda_2_2: float used in TST, LTXT and STXT
+    :param lambda_3_1: float used in TST and LTXT
+    :param lambda_3_2: float used in TST and LTXT
+    :param volatility_target: float
+    :return: DataFrame
+    """
+    weight_tst, strategy_tst = time_series_trend(multivariate_data, lambda_1_1, lambda_1_2, lambda_2_1, lambda_2_2,
+                                                 lambda_3_1, lambda_3_2, volatility_target)
+    weight_mr, strategy_mr = cross_sectional_reversion(multivariate_data, volatility_target)
+    weight_ltxt, strategy_ltxt = long_term_cross_sectional_trend(multivariate_data, lambda_1_1, lambda_1_2, lambda_2_1,
+                                                                 lambda_2_2, lambda_3_1, lambda_3_2, volatility_target)
+    weight_stxt, strategy_stxt = short_term_cross_sectional_trend(multivariate_data, lambda_1_1, lambda_1_2, lambda_2_1,
+                                                                  lambda_2_2, volatility_target)
+    # combine all the DataFrames into two
+    weight = pd.concat([weight_tst, weight_mr, weight_ltxt, weight_stxt], axis=1)
+    strategy_returns = pd.concat([strategy_tst, strategy_mr, strategy_ltxt, strategy_stxt], axis=1)
+    return weight, strategy_returns
+
+
 def main():
     find_db = FinancialDatabase(my_database_name)
     tickers = ['^OMX', '^GSPC', '^N225']
@@ -348,13 +402,16 @@ def main():
     closing_prices.dropna(inplace=True)  # remove rows with N/A
     weekly_closing_prices = closing_prices[closing_prices.index.weekday == 2]  # only select wednesdays
 
-    # perform short-term cross sectional trend
-    strat_ret = short_term_cross_sectional_trend(weekly_closing_prices, 20, 20, 20, 20)[1]
-    cumulative_return = (1 + strat_ret).cumprod()
-    normalized_weekly_closing_prices = weekly_closing_prices.loc[:, :] / weekly_closing_prices.iloc[0, :]
-    combined_df = normalized_weekly_closing_prices.join(cumulative_return)
-    combined_df.plot()
-    plt.show()
+    # alpha_comb = retrieve_all_strategies(weekly_closing_prices, 20, 20, 20, 20, 20, 20)
+    # print(alpha_comb)
+
+    # # perform short-term cross sectional trend
+    # strat_ret = short_term_cross_sectional_trend(weekly_closing_prices, 20, 20, 20, 20)[1]
+    # cumulative_return = (1 + strat_ret).cumprod()
+    # normalized_weekly_closing_prices = weekly_closing_prices.loc[:, :] / weekly_closing_prices.iloc[0, :]
+    # combined_df = normalized_weekly_closing_prices.join(cumulative_return)
+    # combined_df.plot()
+    # plt.show()
 
     # perform long term cross sectional trend
     # long_term_cross_sectional_trend(weekly_closing_prices, 20, 20, 20, 20, 20, 20)
@@ -374,8 +431,11 @@ def main():
     # print(deviation_tfs)
 
     # calculate the cross sectional dispersion
-    # strat_w, strat_ret = cross_sectional_reversion(weekly_closing_prices)
-    # (1 + strat_ret).cumprod().plot()
+    # strat_ret = cross_sectional_reversion(weekly_closing_prices)[1]
+    # cumulative_return = (1 + strat_ret).cumprod()
+    # normalized_weekly_closing_prices = weekly_closing_prices.loc[:, :] / weekly_closing_prices.iloc[0, :]
+    # combined_df = normalized_weekly_closing_prices.join(cumulative_return)
+    # combined_df.plot()
     # plt.show()
 
     # # calculate DDP strategy
