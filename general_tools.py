@@ -77,6 +77,12 @@ def capital_letter_no_blanks_list(variable_list: list) -> list:
 
 def progression_bar(counter: int, goal: int) -> None:
     """Assumes counter and goal are int. Script prints a progression bar."""
+    result = progression_bar_str(counter, goal)
+    print(result)
+
+
+def progression_bar_str(counter: int, goal: int) -> str:
+    """Assumes counter and goal are int. Script prints a progression bar."""
     if counter > goal:
         raise ValueError("'counter' needs to be smaller or equal to 'goal'")
     if counter < 0 or goal <= 0:
@@ -84,8 +90,8 @@ def progression_bar(counter: int, goal: int) -> None:
     progression_percentage_str = str(round(100 * counter / goal, 2)) + '%'
     length = 100
     steps = length / goal
-    print('[' + int(counter * steps) * '*' + int((goal - counter) * steps) * ' ' + ']  ' + progression_percentage_str
-          + ' (' + str(counter) + ' / ' + str(goal) + ')')
+    return_string = '[{}{}] {} ({}/{})'.format(int(counter * steps) * '*', int((goal - counter) * steps) * ' ', progression_percentage_str, counter, goal)
+    return return_string
 
 
 def user_picks_element_from_list(list_: list):
