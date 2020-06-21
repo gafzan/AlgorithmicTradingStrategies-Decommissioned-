@@ -26,6 +26,45 @@ stream_handler.setFormatter(formatter)
 logger.addHandler(stream_handler)
 
 __MONTH_CODE__ = {1: 'F', 2: 'G', 3: 'H', 4: 'J', 5: 'K', 6: 'M', 7: 'N', 8: 'Q', 9: 'U', 10: 'V', 11: 'X', 12: 'Z'}
+__MONTH__ = {1: 'Jan', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'May', 6: 'Jun', 7: 'Jul', 8: 'Aug', 9: 'Sep',
+                       10: 'Oct', 11: 'Nov', 12: 'Dec'}
+
+# source: https://data.bloomberglp.com/indices/sites/2/2018/02/BCOM-Methodology-January-2018_FINAL-2.pdf
+__COMMODITY_BBG_UNDERLYING_CODE__ = {"CL": "WTI Crude Oil", "CO": "Brent Crude Oil", "HO": "ULS Diesel",
+                                     "XB": "RBOB Gasoline", "NG": "Natural Gas", "SI": "Silver", "GC": "Gold",
+                                     "PL": "Platinum", "HG": "Copper", "LA": "Aluminum", "LN": "Nickel", "LX": "Zinc",
+                                     "LL": "Lead", "LT": "Tin", "LC": "Live Cattle", "LH": "Lean Hogs",
+                                     "BO": "Soybean Oil", "SM": "Soybean Meal", "S ": "Soybeans", "C ": "Corn",
+                                     "W ": "Chicago Wheat", "KW": "KC HRW Wheat", "CC": "Cocoa", "CT": "Cotton",
+                                     "SB": "Sugar", "KC": "Coffee"}
+
+# source: https://data.bloomberglp.com/indices/sites/2/2018/02/BCOM-Methodology-January-2018_FINAL-2.pdf
+__ROLLING_MONTHS_COMMODITY_CODE__ = {"CL": ["H", "K", "N", "U", "X", "F"],
+                                     "CO": ["H", "K", "N", "U", "X", "F"],
+                                     "HO": ["H", "K", "N", "U", "X", "F"],
+                                     "XB": ["H", "K", "N", "U", "X", "F"],
+                                     "NG": ["H", "K", "N", "U", "X", "F"],
+                                     "SI": ["H", "K", "N", "U", "Z"],
+                                     "GC": ["G", "J", "M", "Q", "Z"],
+                                     "PL": ["J", "N", "V", "F"],
+                                     "HG": ["H", "K", "N", "U", "Z", "F"],
+                                     "LA": ["H", "K", "N", "U", "X", "F"],
+                                     "LN": ["H", "K", "N", "U", "X", "F"],
+                                     "LX": ["H", "K", "N", "U", "X", "F"],
+                                     "LL": ["H", "K", "N", "U", "X", "F"],
+                                     "LT": ["H", "K", "N", "U", "X", "F"],
+                                     "LC": ["G", "J", "M", "Q", "V", "Z"],
+                                     "LH": ["G", "J", "M", "N", "Q", "V", "Z"],
+                                     "BO": ["H", "K", "N", "Z", "F"],
+                                     "SM": ["H", "K", "N", "Z", "F"],
+                                     "S ": ["H", "K", "N", "X", "F"],
+                                     "C ": ["H", "K", "N", "U", "Z"],
+                                     "W ": ["H", "K", "N", "U", "Z"],
+                                     "KW": ["H", "K", "N", "U", "Z"],
+                                     "CC": ["H", "K", "N", "U", "Z"],
+                                     "CT": ["H", "K", "N", "Z"],
+                                     "SB": ["H", "K", "N", "V"],
+                                     "KC": ["H", "K", "N", "U", "Z"]}
 
 
 def get_investment_universe(underlying_code: str, month_codes: list, start_date: datetime = None, end_date: datetime = None) -> list:
@@ -67,7 +106,7 @@ def get_investment_universe(underlying_code: str, month_codes: list, start_date:
     futures_tickers = [tup[0] for tup in query_futures_tickers]
     if not len(futures_tickers):
         raise ValueError('No tickers could be found in the database.\nDatabase: {}\nUnderlying code: {}\nMonth code: %s'
-                         .format(my_database_name, underlying_code) % ', '.join(month_codes))
+                         .format(my_database_name, underlying_code.upper()) % ', '.join(month_codes))
     return futures_tickers
 
 
