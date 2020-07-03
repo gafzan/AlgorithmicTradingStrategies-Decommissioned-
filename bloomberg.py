@@ -241,7 +241,7 @@ class BloombergConnection:
         for obs_date in observation_date:
             bbg_obs_date = self.bbg_date(obs_date)
             bulk_data_bbg = self.con.bulkref(index_ticker, 'INDX_MWEIGHT_HIST', [('END_DATE_OVERRIDE', bbg_obs_date)])
-            index_members = bulk_data_bbg[bulk_data_bbg['name'] == 'Index Member']['value'].value
+            index_members = bulk_data_bbg[bulk_data_bbg['name'] == 'Index Member']['value'].values
             result_dict.update({obs_date: index_members})
         if return_dict:
             return result_dict
