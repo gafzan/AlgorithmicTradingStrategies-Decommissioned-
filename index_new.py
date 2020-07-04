@@ -10,7 +10,9 @@ import logging
 from financial_database import FinancialDatabase
 from config_database import my_database_name
 from investment_universe import InvestmentUniverse
-import index_signal
+from dataframe_tools import merge_two_dataframes_as_of
+from finance_tools import index_daily_rebalanced
+import index_signal_new
 import index_weight_new
 
 # Logger
@@ -67,7 +69,7 @@ class Index(Basket):
     def __init__(self, investment_universe: InvestmentUniverse, signal=None, weight=None, index_fee: float = 0.0,
                  transaction_cost: float = 0.0, currency: str = None, total_return: bool = False,
                  dividend_tax: float = 0.0, observation_calendar: pd.DatetimeIndex = None, initial_value: float = 100.0,
-                 daily_rebalancing: bool = True):
+                 daily_rebalancing: bool = True, weight_rebalance_lag: int = 1, weight_observation_lag: int = 2):
         super().__init__(investment_universe=investment_universe, currency=currency, total_return=total_return,
                          dividend_tax=dividend_tax)
         self.signal = signal
@@ -77,6 +79,34 @@ class Index(Basket):
         self.initial_value = initial_value
         self.observation_calendar = observation_calendar
         self.daily_rebalancing = daily_rebalancing
+        self.weight_observation_lag = weight_observation_lag
+        self.weight_rebalance_lag = weight_rebalance_lag
+        # TODO volatility target
+
+    def get_back_test(self, end_date: datetime = None):
+        self._assign_signal_to_weight()
+        weight_df = self.weight.get_weights()
+        price_df = self.basket_prices(start_date=weight_df.index[0], end_date=end_date)
+        daily_returns = price_df.pct_change()
+        daily_returns.iloc[0, :] = 0
+        index_result = index_daily_rebalanced(daily_returns, weight_df, self.transaction_cost, self.index_fee,
+                                              self.weight_rebalance_lag, self.weight_observation_lag, self.initial_value)
+        return index_result
+
+    def _get_eligibility_df(self):
+        eligibility_df = self.investment_universe.get_eligibility_df(True)
+        if self.observation_calendar is not None:
+            eligibility_df = merge_two_dataframes_as_of(pd.DataFrame(index=self.observation_calendar), eligibility_df)
+        return eligibility_df
+
+    def _assign_signal_to_weight(self):
+        eligibility_df = self._get_eligibility_df()
+        if self.signal is None:
+            signal = index_signal_new.Signal(eligibility_df=eligibility_df)  # default signal is just the eligibility DataFrame
+            self.weight.signal_df = signal.get_signal()
+        else:
+            self.signal.eligibility_df = eligibility_df
+            self.weight.signal_df = self.signal.get_signal()
 
     # ------------------------------------------------------------------------------------------------------------------
     # getter and setter methods
@@ -86,7 +116,9 @@ class Index(Basket):
 
     @signal.setter
     def signal(self, signal):
-        if issubclass(type(signal), index_signal._Signal):
+        if signal is None:
+            self._signal = None
+        elif issubclass(type(signal), index_signal_new.Signal) or isinstance(signal, index_signal_new.Signal):
             self._signal = signal
         else:
             raise ValueError('Needs to be of type that is a subclass of _Signal.')
@@ -141,4 +173,36 @@ class Index(Basket):
         else:
             ValueError('observation_calendar needs to be a DatetimeIndex that is monotonic increasing.')
 
+    @property
+    def initial_value(self):
+        return self._initial_value
 
+    @initial_value.setter
+    def initial_value(self, initial_value: float):
+        if initial_value <= 0:
+            raise ValueError('initial_value needs to be a float larger than 0.')
+        self._initial_value = initial_value
+
+    @property
+    def weight_observation_lag(self):
+        return self._weight_observation_lag
+
+    @weight_observation_lag.setter
+    def weight_observation_lag(self, weight_observation_lag: int):
+        if weight_observation_lag < 1:
+            raise ValueError('weight_observation_lag needs to be an int larger or equal to 1 in order for the index to '
+                             'be replicable.')
+        self._weight_observation_lag = weight_observation_lag
+
+    @property
+    def weight_rebalance_lag(self):
+        return self._weight_rebalance_lag
+
+    @weight_rebalance_lag.setter
+    def weight_rebalance_lag(self, weight_rebalance_lag: int):
+        if weight_rebalance_lag < 1:
+            raise ValueError('weight_rebalance_lag needs to be an int larger or equal to 1.')
+        self._weight_rebalance_lag = weight_rebalance_lag
+
+    def __repr__(self):
+        return '<Index()>'
