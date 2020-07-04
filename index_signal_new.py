@@ -131,7 +131,7 @@ class SimpleMovingAverageCrossSignal(_PriceBasedSignal):
         leading_sma_df = rolling_average(price_data, self._sma_lead)
         lagging_sma_df = rolling_average(price_data, self._sma_lag)
         raw_signal_df = pd.DataFrame(index=price_data.index, columns=price_data.columns,
-                                     data=np.where(leading_sma_df > lagging_sma_df, 1, -1))
+                                     data=np.where(leading_sma_df < lagging_sma_df, -1, 1))
         return raw_signal_df
 
     # ------------------------------------------------------------------------------------------------------------------
@@ -173,7 +173,7 @@ def main():
     print(invest_uni)
     eligibility_df = invest_uni.get_eligibility_df(True)
 
-    sma_signal = SimpleMovingAverageCrossSignal(50)
+    sma_signal = SimpleMovingAverageCrossSignal(1, 1)
     sma_signal.eligibility_df = eligibility_df
     print(sma_signal.get_signal())
 
