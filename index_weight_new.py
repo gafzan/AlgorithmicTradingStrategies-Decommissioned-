@@ -18,8 +18,8 @@ stream_handler.setFormatter(formatter)
 logger.addHandler(stream_handler)
 
 
-class _Weight:
-    """Class definition of _Weight"""
+class Weight:
+    """Class definition of Weight"""
 
     # Initializer / instance attribute
     def __init__(self, signal_df: pd.DataFrame = None):
@@ -32,7 +32,7 @@ class _Weight:
 
     def _calculate_weight(self):
         # to be overridden
-        raise ValueError('Instance of a _Weight object should not call calculate_weight.')
+        raise ValueError('Only an instance of a subclass of Weight object should call calculate_weight.')
 
     @property
     def signal_df(self):
@@ -49,11 +49,11 @@ class _Weight:
         return 'no signal assigned' if self.signal_df is None else '{}x{} signal DataFrame assinged'.format(self.signal_df.shape[0], self.signal_df.shape[1])
 
     def __repr__(self):
-        return "<_Weight({})>".format(self.get_weight_desc())
+        return "<Weight({})>".format(self.get_weight_desc())
 
 
-class EqualWeight(_Weight):
-    """Class definition of EqualWeight. Subclass of _Weight."""
+class EqualWeight(Weight):
+    """Class definition of EqualWeight. Subclass of Weight."""
 
     def _calculate_weight(self):
         # calculate the number of non-NaN columns per row
@@ -64,8 +64,8 @@ class EqualWeight(_Weight):
         return "<EqualWeight({})>".format(self.get_weight_desc())
 
 
-class StaticWeight(_Weight):
-    """Class definition of StaticWeight. Subclass of _Weight."""
+class StaticWeight(Weight):
+    """Class definition of StaticWeight. Subclass of Weight."""
 
     def _calculate_weight(self):
         """
