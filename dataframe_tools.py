@@ -32,12 +32,25 @@ def get_unique_values_from_dataframe(values_df: pd.DataFrame) -> list:
     return unique_value_list
 
 
-def check_if_values_in_dataframe_are_allowed(values_df: pd.DataFrame, *args) -> bool:
+def dataframe_values_check(values_df: pd.DataFrame, *args) -> bool:
     """Assumes that values_df is a DataFrame. Returns True if all the unique values in values_df exist in *args, else
     return False."""
     unique_values_in_df = set(get_unique_values_from_dataframe(values_df))
     allowed_domain = set(args)
     return len(unique_values_in_df.difference(allowed_domain)) == 0
+
+
+def merge_two_dataframes_as_of(left_df: pd.DataFrame, right_df: pd.DataFrame, left_suffix: str = '_x'):
+    result = left_df.copy()
+    right_df = right_df.copy()
+    result.reset_index(inplace=True)
+    right_df.reset_index(inplace=True)
+    index_left_on_col_name = list(result)[0]
+    weights_left_on_col_name = list(right_df)[0]
+    result = pd.merge_asof(result, right_df, left_on=index_left_on_col_name, right_on=weights_left_on_col_name,
+                           suffixes=('', left_suffix))
+    result.set_index(list(result)[0], inplace=True)
+    return result
 
 
 
