@@ -6,50 +6,149 @@ from matplotlib import pyplot as plt
 from scipy.optimize import minimize
 
 
-def total_allocation_constraint(weight, allocation: float):
-    return weight.sum() - allocation
+def total_allocation_constraint(weight, allocation: float, upper_bound: bool = True):
+    """
+    Used for inequality constraint for the total allocation.
+    :param weight: np.array
+    :param allocation: float
+    :param upper_bound: bool if true the constraint is from above (sum of weights <= allocation) else from below
+    (sum of weights <= allocation)
+    :return: np.array
+    """
+    if upper_bound:
+        return allocation - weight.sum()
+    else:
+        return weight.sum() - allocation
 
 
 def portfolio_variance(weights: np.array, covariance_matrix: np.array):
     """
-
-    :param weights:
-    :param covariance_matrix:
-    :return:
+    Return the portfolio variance
+    :param weights: np.array
+    :param covariance_matrix: np.array
+    :return: float
     """
     return np.matmul(np.matmul(weights, covariance_matrix), np.transpose(weights))
 
 
 def portfolio_volatility(weights: np.array, covariance_matrix: np.array):
     """
-
-    :param weights:
-    :param covariance_matrix:
-    :return:
+    Return the portfolio volatility
+    :param weights: np.array
+    :param covariance_matrix: np.array
+    :return: float
     """
     port_variance = portfolio_variance(weights, covariance_matrix)
     return np.sqrt(port_variance)
 
 
-def minimum_variance_portfolio_weights_with_constraints(covariance_matrix, initial_guess: np.array = None,
-                                                        min_total_weight: float = 1., max_total_weight: float = 1.,
-                                                        min_instrument_weight: float = 0., max_instrument_weight: float = 1.):
+def negative_risk_aversion_adjusted_return(weight: np.array, covariance_matrix: np.array, mean_returns: np.array, lambda_: float):
+    """
+    Returns portfolio returns - lambda * portfolio volatility. This is minimized in a mean variance optimization framework.
+    :param weight: np.array
+    :param covariance_matrix: np.array
+    :param mean_returns: np.array
+    :param lambda_: float
+    :return: float
+    """
+    port_ret = np.matmul(weight, np.transpose(mean_returns))
+    port_vol = portfolio_volatility(weight, covariance_matrix)
+    return lambda_ * port_vol - port_ret
+
+
+def target_return_constraint(weight: np.array, mean_returns: np.array, target_return: float):
+    """
+    Used for inequality constraint for the target return.
+    :param weight: np.array
+    :param mean_returns: np.array
+    :param target_return: float
+    :return: float
+    """
+    port_ret = np.matmul(weight, np.transpose(mean_returns))
+    return port_ret - target_return
+
+
+def get_instrument_weight_bounds(min_instrument_weight: {float, list, tuple}, max_instrument_weight: {float, list, tuple}, num_assets: int):
+    """
+    Return a list of tuples containg the minimum and maximum allowed weights for each instrument.
+    :param min_instrument_weight: {float, list, tuple}
+    :param max_instrument_weight:  {float, list, tuple}
+    :param num_assets: int
+    :return: list
+    """
+    # setup the constraints for the minimum instrument weights
+    try:
+        if len(min_instrument_weight) != num_assets:
+            raise ValueError(
+                'Number of minimum instrument weights ({}) is not the same as number of assets ({}).'.format(
+                    len(min_instrument_weight), num_assets))
+        instrument_weight_bounds_min = [(min_i_w,) for min_i_w in min_instrument_weight]
+    except TypeError:
+        instrument_weight_bounds_min = num_assets * [(min_instrument_weight,)]
+
+    # setup the constraints for the maximum instrument weights
+    instrument_weight_bounds = []
+    for i in range(len(instrument_weight_bounds_min)):
+        try:
+            if len(max_instrument_weight) != num_assets:
+                raise ValueError(
+                    'Number of maximum instrument weights ({}) is not the same as number of assets ({}).'.format(
+                        len(max_instrument_weight), num_assets))
+            min_max_tpl = instrument_weight_bounds_min[i] + (max_instrument_weight[i],)
+        except TypeError:
+            min_max_tpl = instrument_weight_bounds_min[i] + (max_instrument_weight,)
+        instrument_weight_bounds.append(min_max_tpl)
+    return instrument_weight_bounds
+
+
+def optimal_mean_variance_portfolio_weights_with_constraints(mean_returns: np.array, covariance_matrix, initial_guess: np.array = None, min_total_weight: float = 0.,  max_total_weight: float = 1.,
+                                                             min_instrument_weight: {float, list, tuple}=0., max_instrument_weight: {float, list, tuple}=1., risk_aversion_factor: int = 1, return_target: float = 0):
+    num_assets = covariance_matrix.shape[0]
+    if initial_guess is None:  # if not initial guess is provided, use equal weighting as an initial guess
+        initial_guess = np.array(num_assets * [1 / num_assets])
+
+    # returns a list of tuples [(min_weight_1, max_weight_1), (min_weight_2, max_weight_2), ...
+    instrument_weight_bounds = get_instrument_weight_bounds(min_instrument_weight, max_instrument_weight, num_assets)
+
+    # sum of all instrument weights should be within a certain region
+    max_total_weight_cons = {'type': 'ineq',
+                             'fun': total_allocation_constraint,
+                             'args': (max_total_weight,)}
+    min_total_weight_cons = {'type': 'ineq',
+                             'fun': total_allocation_constraint,
+                             'args': (min_total_weight, False, )}
+
+    # the return target needs to be satisfied
+    return_target_cons = {'type': 'ineq',
+                          'fun': target_return_constraint,
+                          'args': (mean_returns, return_target, )}
+    total_weight_cons = [min_total_weight_cons, max_total_weight_cons, return_target_cons]
+
+    # find the solution using an active set optimizer
+    sol = minimize(negative_risk_aversion_adjusted_return, initial_guess, method='SLSQP', args=(covariance_matrix, mean_returns, risk_aversion_factor, ),
+                   bounds=instrument_weight_bounds, constraints=total_weight_cons)
+    return sol.x
+
+
+def minimum_variance_portfolio_weights_with_constraints(covariance_matrix, initial_guess: np.array = None, max_total_weight: float = 1.,
+                                                        min_instrument_weight: {float, list, tuple}=0., max_instrument_weight: {float, list, tuple}=1.):
 
     num_assets = covariance_matrix.shape[0]
     if initial_guess is None:  # if not initial guess is provided, use equal weighting as an initial guess
         initial_guess = np.array(num_assets * [1 / num_assets])
 
-    instrument_weight_bounds = tuple(num_assets * [(min_instrument_weight, max_instrument_weight)])
-    max_total_weight_cons = {'type': 'eq',  # TODO change to ineq
+    # returns a list of tuples [(min_weight_1, max_weight_1), (min_weight_2, max_weight_2), ...
+    instrument_weight_bounds = get_instrument_weight_bounds(min_instrument_weight, max_instrument_weight, num_assets)
+
+    # sum of all instrument weights should sum up to a given amount
+    max_total_weight_cons = {'type': 'eq',
                              'fun': total_allocation_constraint,
                              'args': (max_total_weight, )}
-    min_total_weight_cons = {'type': 'ineq',  # TODO change to ineq
-                             'fun': total_allocation_constraint,
-                             'args': (min_total_weight,)}
-    cons = [max_total_weight_cons, min_total_weight_cons]
+
+    # find the solution using an active set optimizer
     sol = minimize(portfolio_variance, initial_guess, method='SLSQP', args=(covariance_matrix, ),
-                   bounds=instrument_weight_bounds, constraints=cons)
-    print(sol.x)
+                   bounds=instrument_weight_bounds, constraints=max_total_weight_cons)
+    return sol.x
 
 
 def minimum_variance_optimizer(covariance_matrix, initial_guess):
