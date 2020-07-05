@@ -69,7 +69,8 @@ class Index(Basket):
     def __init__(self, investment_universe: InvestmentUniverse, signal=None, weight=None, index_fee: float = 0.0,
                  transaction_cost: float = 0.0, currency: str = None, total_return: bool = False,
                  dividend_tax: float = 0.0, observation_calendar: pd.DatetimeIndex = None, initial_value: float = 100.0,
-                 daily_rebalancing: bool = True, weight_rebalance_lag: int = 1, weight_observation_lag: int = 2):
+                 daily_rebalancing: bool = True, weight_rebalance_lag: int = 1, weight_observation_lag: int = 2,
+                 volatility_target: float = None, volatility_observation_lag: {int, list}=None, risky_weight_cap: float = 1.0):
         super().__init__(investment_universe=investment_universe, currency=currency, total_return=total_return,
                          dividend_tax=dividend_tax)
         self.signal = signal
@@ -81,17 +82,26 @@ class Index(Basket):
         self.daily_rebalancing = daily_rebalancing
         self.weight_observation_lag = weight_observation_lag
         self.weight_rebalance_lag = weight_rebalance_lag
-        # TODO volatility target
+        self.volatility_target = volatility_target
+        self.volatility_observation_lag = volatility_observation_lag
+        self.risky_weight_cap = risky_weight_cap
 
-    def get_back_test(self, end_date: datetime = None):
+    def get_back_test(self, end_date: datetime = None, only_index: bool = False):
         self._assign_signal_to_weight()
         weight_df = self.weight.get_weights()
         price_df = self.basket_prices(start_date=weight_df.index[0], end_date=end_date)
         daily_returns = price_df.pct_change()
         daily_returns.iloc[0, :] = 0
         index_result = index_daily_rebalanced(daily_returns, weight_df, self.transaction_cost, self.index_fee,
-                                              self.weight_rebalance_lag, self.weight_observation_lag, self.initial_value)
-        return index_result
+                                              self.weight_rebalance_lag, self.weight_observation_lag, self.initial_value,
+                                              self.volatility_target, self.volatility_observation_lag, self.risky_weight_cap)
+        if only_index:
+            try:
+                return index_result.loc[:, ['NET_INDEX']].dropna()
+            except KeyError:
+                return index_result.loc[:, ['GROSS_INDEX']].dropna()
+        else:
+            return index_result
 
     def _get_eligibility_df(self):
         eligibility_df = self.investment_universe.get_eligibility_df(True)
@@ -129,7 +139,9 @@ class Index(Basket):
 
     @weight.setter
     def weight(self, weight):
-        if issubclass(type(weight), index_weight_new.Weight):
+        if weight is None:
+            self._weight = None
+        elif issubclass(type(weight), index_weight_new.Weight):
             self._weight = weight
         else:
             raise ValueError('Needs to be of type that is a subclass of Weight.')
@@ -204,5 +216,52 @@ class Index(Basket):
             raise ValueError('weight_rebalance_lag needs to be an int larger or equal to 1.')
         self._weight_rebalance_lag = weight_rebalance_lag
 
+    @property
+    def volatility_target(self):
+        return self._volatility_target
+
+    @volatility_target.setter
+    def volatility_target(self, volatility_target: float):
+        if volatility_target is None:
+            self._volatility_target = None
+        elif volatility_target <= 0:
+            raise ValueError('volatility_target needs to be a float larger than 0.')
+        self._volatility_target = volatility_target
+
+    @property
+    def risky_weight_cap(self):
+        return self._risky_weight_cap
+
+    @risky_weight_cap.setter
+    def risky_weight_cap(self, risky_weight_cap: float):
+        if risky_weight_cap <= 0:
+            raise ValueError('risky_weight_cap needs to be a float larger than 0.')
+        self._risky_weight_cap = risky_weight_cap
+
     def __repr__(self):
         return '<Index()>'
+
+
+def main():
+    # investment universe
+    tickers = ["AGRO.ST", "AAK.ST", "ABB.ST"]
+    invest_uni = InvestmentUniverse(tickers, '2018', '2020', freq='M')
+    invest_uni.apply_liquidity_filter(60, 300000, 'sek')
+
+    index = Index(invest_uni, transaction_cost=0.001, index_fee=0.005, volatility_target=0.1,
+                  volatility_observation_lag=60)
+    index.weight = index_weight_new.EqualWeight()
+    eqw_index = index.get_back_test(only_index=True)
+    index.weight = index_weight_new.VolatilityWeight(60)
+    inv_vol_index = index.get_back_test(only_index=True)
+    combined = eqw_index.join(inv_vol_index, rsuffix='_inverse_volatility'.upper())
+
+
+    from matplotlib import pyplot as plt
+    print(combined)
+    combined.plot()
+    plt.show()
+
+
+if __name__ == '__main__':
+    main()
