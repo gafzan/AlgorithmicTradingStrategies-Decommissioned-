@@ -280,26 +280,4 @@ class MinimumVarianceWeight(_PriceBasedWeight):
     pass
 
 
-def main():
-    # AGRO.ST, AAK.ST, ABB.ST
-    tickers = ["AGRO.ST", "AAK.ST", "ABB.ST"]
-    invest_uni = InvestmentUniverse(tickers, '2018', '2020', freq='M')
-    print(invest_uni)
-    invest_uni.apply_liquidity_filter(60, 300000, 'sek')
-    print(invest_uni)
-    signal_df = invest_uni.get_eligibility_df(True)
-
-    signal_df.iloc[1, :] = [-1, -1, 1]
-    signal_df.iloc[2, :] = [-1, -1, -1]
-    signal_df.iloc[4, :] = [np.nan, -1, -1]
-    signal_df.iloc[4, :] = [np.nan, 1, -1]
-    print(signal_df)
-
-    inv_vol = VolatilityWeight(60, True)
-    inv_vol.signal_df = signal_df
-    print(inv_vol.get_weights())
-
-
-if __name__ == '__main__':
-    main()
 
