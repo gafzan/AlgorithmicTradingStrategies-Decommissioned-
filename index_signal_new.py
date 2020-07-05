@@ -164,7 +164,7 @@ class _FinancialDatabaseDependentSignal(Signal):
 
 
 class _PriceBasedSignal(_FinancialDatabaseDependentSignal):
-    """Class definition of _PriceBasedSignal. Subclass of Signal."""
+    """Class definition of _PriceBasedSignal. Subclass of _FinancialDatabaseDependentSignal."""
 
     def __init__(self, tickers: {str, list}, observation_calendar: pd.DatetimeIndex,
                  eligibility_df: pd.DataFrame, total_return: bool, currency: str, price_obs_freq: {str, int}):
@@ -178,7 +178,7 @@ class _PriceBasedSignal(_FinancialDatabaseDependentSignal):
 
     def _get_start_end_date(self):
         if self.eligibility_df is None:
-            raise ValueError('An eligibility_df needs to be specified.')
+            raise ValueError('eligibility_df needs to be specified.')
         return min(self.eligibility_df.index) - BDay(self._observation_buffer), max(self.eligibility_df.index)
 
     def _get_price_df(self):
@@ -342,23 +342,3 @@ class PerformanceRankSignal(_PriceBasedRankSignal):
     def __repr__(self):
         return "<PerformanceRankSignal()>"
 
-
-def main():
-    # AGRO.ST, AAK.ST, ABB.ST
-    tickers = ["AGRO.ST", "AAK.ST", "ABB.ST"]
-    invest_uni = InvestmentUniverse(tickers, '2018', '2020', freq='M')
-    invest_uni.apply_liquidity_filter(60, 300000)
-    eligibility_df = invest_uni.get_eligibility_df(True)
-
-    low_vol_signal = VolatilityRankSignal(60, 1, descending=True)
-    low_vol_signal.eligibility_df = eligibility_df
-    print(low_vol_signal.get_signal())
-
-    # sma_signal = SimpleMovingAverageCrossSignal(100, 20, eligibility_df=eligibility_df)
-    # print(sma_signal.get_signal())
-
-
-
-
-if __name__ == '__main__':
-    main()
