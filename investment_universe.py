@@ -132,3 +132,4 @@ class InvestmentUniverse:
 
     def __repr__(self):
         return '<InvestmentUniverse(filter=%s)>' % ', '.join(self._filter_desc_list)
+

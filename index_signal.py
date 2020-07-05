@@ -4,7 +4,7 @@ import numpy as np
 from financial_database import FinancialDatabase
 
 # my own modules
-from dataframe_tools import select_rows_from_dataframe_based_on_sub_calendar, check_if_values_in_dataframe_are_allowed
+from dataframe_tools import select_rows_from_dataframe_based_on_sub_calendar, dataframe_values_check
 from finance_tools import rolling_average, realized_volatility
 from config_database import my_database_name
 
@@ -84,11 +84,11 @@ class _Signal:
             # same column headers and allowed values are 1s and 0s
             # if signal_observation_calendar has already been assigned it needs to equal the index of eligibility_df
             change_eligibility_df = list(eligibility_df) == self.ticker_list \
-                                    and check_if_values_in_dataframe_are_allowed(eligibility_df, 0, 1) \
+                                    and dataframe_values_check(eligibility_df, 0, 1) \
                                     and all(eligibility_df.index == self.signal_observation_calendar) \
                                     if self.signal_observation_calendar is not None\
                                     else self.ticker_list \
-                                    and check_if_values_in_dataframe_are_allowed(eligibility_df, 0, 1)
+                                         and dataframe_values_check(eligibility_df, 0, 1)
             if change_eligibility_df:
                 self._eligibility_df = eligibility_df
                 if self.signal_observation_calendar is None:

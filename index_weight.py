@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from financial_database import FinancialDatabase
 from config_database import my_database_name
-from dataframe_tools import dataframe_has_same_index_and_column_names, check_if_values_in_dataframe_are_allowed, \
+from dataframe_tools import dataframe_has_same_index_and_column_names, dataframe_values_check, \
     select_rows_from_dataframe_based_on_sub_calendar
 from finance_tools import realized_volatility
 from datetime import timedelta
@@ -30,7 +30,7 @@ class _Weight:
 
     @signal_df.setter
     def signal_df(self, signal_df: pd.DataFrame):
-        if signal_df is None or check_if_values_in_dataframe_are_allowed(signal_df, -1, 0, 1):
+        if signal_df is None or dataframe_values_check(signal_df, -1, 0, 1):
             self._signal_df = signal_df
         else:
             raise ValueError('Signal DataFrame contains more values than -1, 0 and 1.')
@@ -56,11 +56,10 @@ class EqualWeight(_Weight):
                            total_short_allocation: float = 0.0) -> pd.DataFrame:
         """Assumes that signal_df is a DataFrame containing 0 (neutral), 1 (long) or -1 (short) and that
         maximum_long_allocation maximum_short_allocation are float."""
-        shifted_signal_df = signal_df.shift()  # Observe signal at T and adjust weights at T + 1
-        shifted_signal_df.iloc[0, :] = 0.0  # Set the first row (NaN) to zero.
-
-        count_long_positions_s = (shifted_signal_df == 1.0).sum(axis=1)  # Sum each row
-        count_short_positions_s = (shifted_signal_df == -1.0).sum(axis=1)
+        # shifted_signal_df = signal_df.shift()  # Observe signal at T and adjust weights at T + 1
+        # shifted_signal_df.iloc[0, :] = 0.0  # Set the first row (NaN) to zero.
+        count_long_positions_s = (signal_df == 1.0).sum(axis=1)  # Sum each row
+        count_short_positions_s = (signal_df == -1.0).sum(axis=1)
 
         # Calculate the weights and remove any non-numeric values
         long_weights_s = total_long_allocation / count_long_positions_s
@@ -68,8 +67,8 @@ class EqualWeight(_Weight):
         long_weights_s.replace([np.inf, -np.inf, np.nan], 0.0, inplace=True)
         short_weights_s.replace([np.inf, -np.inf, np.nan], 0.0, inplace=True)
 
-        shifted_long_signal_df = shifted_signal_df.replace(-1.0, 0.0)  # Only include the long and neutral signal
-        shifted_short_signal_df = shifted_signal_df.replace(1.0, 0.0)  # Only include the short and neutral signal
+        shifted_long_signal_df = signal_df.replace(-1.0, 0.0)  # Only include the long and neutral signal
+        shifted_short_signal_df = signal_df.replace(1.0, 0.0)  # Only include the short and neutral signal
         long_weights_df = shifted_long_signal_df.mul(long_weights_s, axis=0)
         short_weights_df = shifted_short_signal_df.mul(short_weights_s, axis=0)
         weights_df = long_weights_df + short_weights_df
@@ -151,7 +150,7 @@ class _ProportionalValueWeight(_Weight):
         decides if the weights are proportional or inversely-proportional."""
         if not dataframe_has_same_index_and_column_names(signal_df, values_df):
             raise ValueError('signal_df and values_df does not have the same composition.')
-        values_df.iloc[:, 0] = np.nan
+        # values_df.iloc[:, 0] = np.nan
         if inversely:
             values_df = values_df.apply(lambda x: 1.0 / x)
         values_df *= signal_df
@@ -162,7 +161,7 @@ class _ProportionalValueWeight(_Weight):
     # Overriding the setter property in the parent class because of different constraint on signal DataFrame.
     @_Weight.signal_df.setter
     def signal_df(self, signal_df: pd.DataFrame):
-        if signal_df is None or check_if_values_in_dataframe_are_allowed(signal_df, 0, 1):
+        if signal_df is None or dataframe_values_check(signal_df, 0, 1):
             self._signal_df = signal_df
         else:
             raise ValueError('Signal DataFrame contains more values than 0 and 1.')
@@ -203,3 +202,16 @@ class VolatilityWeight(_ProportionalValueWeight):
 
     def __repr__(self):
         return "<VolatilityWeight(inversely = {}, measurement lag = {} days)>".format(self.inversely, self.volatility_lag)
+
+
+def main():
+    w = EqualWeight()
+    print(w.get_weights())
+
+
+if __name__ == '__main__':
+    main()
+
+
+
+
