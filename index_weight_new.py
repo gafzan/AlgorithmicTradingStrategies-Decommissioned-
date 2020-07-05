@@ -2,11 +2,18 @@
 index_weight.py
 """
 import pandas as pd
+from pandas.tseries.offsets import BDay
 import numpy as np
 
 import logging
 
-# test
+# my modules
+from financial_database import FinancialDatabase
+from config_database import my_database_name
+from dataframe_tools import merge_two_dataframes_as_of
+from finance_tools import realized_volatility_v2
+
+# TODO test
 from investment_universe import InvestmentUniverse
 
 # Logger
@@ -52,13 +59,151 @@ class Weight:
         return "<Weight({})>".format(self.get_weight_desc())
 
 
+class _ProportionalWeight(Weight):
+    """Class definition of _ProportionalWeight. Subclass of Weight."""
+
+    def __init__(self, signal_df: pd.DataFrame, inversely: bool):
+        super().__init__(signal_df)
+        self.inversely = inversely
+
+    def _get_dataframe(self):
+        raise ValueError('_get_dataframe should not be called by an instance of _ProportionalWeight.')
+
+    def _calculate_weight(self):
+        data = self._get_dataframe()
+        if list(data) == list(self.signal_df):  # same column names
+            if self.inversely:
+                data = data.apply(lambda x: 1 / x)  # inverse of all values
+            data_obs_dates_df = merge_two_dataframes_as_of(pd.DataFrame(index=self.signal_df.index), data)
+            data.replace([np.nan, np.Inf, -np.Inf], 0, inplace=True)
+            eligible_data_indicator = self.signal_df.copy()
+            eligible_data_indicator[~eligible_data_indicator.isnull()] = 1  # set all non NaN to 1
+            data_obs_dates_df *= eligible_data_indicator.values
+
+            data_sum = data_obs_dates_df.sum(axis=1)
+            weight_df = data_obs_dates_df.divide(data_sum, axis=0)
+
+            # make sure that the weights have the same observation calendar as the signal DataFrame
+            weight_df *= self.signal_df.values
+
+            weight_df.replace(np.nan, 0, inplace=True)
+            return weight_df
+        else:
+            raise ValueError('column headers of signal_df and the given data are not the same.')
+
+
+class _FinancialDatabaseDependentWeight(Weight):
+    """Class definition of _FinancialDatabaseDependentWeight. Subclass of Weight."""
+
+    def __init__(self, signal_df: pd.DataFrame):
+        Weight.__init__(self, signal_df=signal_df)
+        self._financial_database_handler = FinancialDatabase(my_database_name)
+
+    # ------------------------------------------------------------------------------------------------------------------
+    # get and setter methods
+    @property
+    def financial_database_handler(self):
+        # make financial_database_handler read-only
+        return self._financial_database_handler
+
+    def __repr__(self):
+        return "<_FinancialDatabaseDependentWeight()>"
+
+
+class _PriceBasedWeight(_FinancialDatabaseDependentWeight):
+    """Class definition of _PriceBasedSignal. Subclass of _FinancialDatabaseDependentWeight."""
+
+    def __init__(self, signal_df: pd.DataFrame, total_return: bool, currency: str, price_obs_freq: {str, int}):
+        _FinancialDatabaseDependentWeight.__init__(self, signal_df=signal_df)
+        self.total_return = total_return
+        self.currency = currency
+        self._observation_buffer = 0
+        self._weekday_i_dict = {'mon': 0, 'monday': 0, 'tuesday': 1, 'tue': 1, 'wed': 2, 'wednesday': 2, 'thursday': 3,
+                                'thu': 4, 'friday': 5, 'fri': 5}
+        self.price_obs_freq = price_obs_freq
+
+    def _get_start_end_date(self):
+        if self.signal_df is None:
+            raise ValueError('signal_df needs to be specified.')
+        return min(self.signal_df.index) - BDay(self._observation_buffer), max(self.signal_df.index)
+
+    def _get_price_df(self):
+        start_date, end_date = self._get_start_end_date()
+        if self.total_return:
+            price = self.financial_database_handler.get_total_return_df(list(self.signal_df), start_date, end_date,
+                                                                        0, self.currency)
+        else:
+            price = self.financial_database_handler.get_close_price_df(list(self.signal_df), start_date, end_date,
+                                                                       self.currency)
+        # filter out rows if you have specified certain observation intervals or weekdays
+        if isinstance(self.price_obs_freq, str):
+            price = price[price.index.weekday == self._weekday_i_dict[self.price_obs_freq]]
+        elif isinstance(self.price_obs_freq, int):
+            # sort index in descending order. this is done to have the count start from the latest observation date
+            price = price.sort_index(ascending=False).iloc[::self.price_obs_freq, :].sort_index()
+        return price
+
+    # ------------------------------------------------------------------------------------------------------------------
+    # get and setter methods
+    @property
+    def price_obs_freq(self):
+        return self._price_obs_freq
+
+    @price_obs_freq.setter
+    def price_obs_freq(self, price_obs_freq: {str, int}):
+        if isinstance(price_obs_freq, str) and price_obs_freq.lower() in list(self._weekday_i_dict.keys()):
+            self._price_obs_freq = price_obs_freq.lower()
+        elif isinstance(price_obs_freq, int) and price_obs_freq >= 1:
+            self._price_obs_freq = price_obs_freq
+        elif price_obs_freq is None:
+            self._price_obs_freq = None
+        else:
+            raise ValueError('price_obs_freq needs an int larger or equal to 1 or a string equal to %s.'
+                             % ' or '.join(self._weekday_i_dict.keys()))
+
+    def __repr__(self):
+        return "<_PriceBasedWeight()>"
+
+
+class _PriceBasedProportionalWeight(_PriceBasedWeight, _ProportionalWeight):
+    """Class definition of _PriceBasedProportionalWeight. Subclass of _PriceBasedWeight and
+    _ProportionalWeight."""
+
+    def __init__(self, signal_df: pd.DataFrame, total_return: bool, currency: str, price_obs_freq: {str, int},
+                 inversely: bool):
+        _PriceBasedWeight.__init__(self, signal_df=signal_df, total_return=total_return, currency=currency,
+                                   price_obs_freq=price_obs_freq)
+        _ProportionalWeight.__init__(self, signal_df=signal_df, inversely=inversely)
+
+    def __repr__(self):
+        return "<_PriceBasedProportionalWeight()>"
+
+
 class EqualWeight(Weight):
     """Class definition of EqualWeight. Subclass of Weight."""
 
+    def __init__(self, signal_df: pd.DataFrame = None, gross_equal_weights: bool = True):
+        """
+        If gross_equal_weights is True the weights are calculated as equal weights regardless if it is a long or short
+        position. If False, the equal weighting is separately done for the long and short positions.
+        :param signal_df: DataFrame
+        :param gross_equal_weights: bool
+        """
+        super().__init__(signal_df=signal_df)
+        self.gross_equal_weights = gross_equal_weights
+
     def _calculate_weight(self):
         # calculate the number of non-NaN columns per row
-        numeric_columns = self.signal_df.count(axis=1)
-        return self.signal_df.divide(numeric_columns, axis=0).replace(np.nan, 0)
+        if self.gross_equal_weights:
+            numeric_columns = self.signal_df.count(axis=1)
+            weight_df = self.signal_df.divide(numeric_columns, axis=0).replace(np.nan, 0)
+        else:
+            positive_columns = self.signal_df[self.signal_df > 0.0].count(axis=1)
+            negative_columns = self.signal_df[self.signal_df < 0.0].count(axis=1)
+            weight_df = self.signal_df.copy().replace(np.nan, 0)
+            weight_df[weight_df > 0.0] = weight_df[weight_df > 0.0].divide(positive_columns, axis=0)
+            weight_df[weight_df < 0.0] = weight_df[weight_df < 0.0].divide(negative_columns, axis=0)
+        return weight_df
 
     def __repr__(self):
         return "<EqualWeight({})>".format(self.get_weight_desc())
@@ -110,6 +255,31 @@ class StaticWeight(Weight):
         return "<StaticWeight({})>".format(self.get_weight_desc())
 
 
+class VolatilityWeight(_PriceBasedProportionalWeight):
+    """Class definition of VolatilityWeight. Subclass of _PriceBasedProportionalWeight."""
+
+    def __init__(self, volatility_observation_period: {int, list}, inversely: bool = True, signal_df: pd.DataFrame = None,
+                 total_return: bool = True, currency: str = None, price_obs_freq: {str, int} = None):
+        super().__init__(signal_df=signal_df, total_return=total_return, currency=currency,
+                         price_obs_freq=price_obs_freq, inversely=inversely)
+        self.volatility_observation_period = volatility_observation_period
+        if isinstance(volatility_observation_period, int):
+            self._observation_buffer = volatility_observation_period + 10
+        else:
+            self._observation_buffer = max(volatility_observation_period) + 10
+
+    def _get_dataframe(self):
+        price = self._get_price_df()
+        volatility = realized_volatility_v2(multivariate_price_df=price, vol_lag=self.volatility_observation_period)
+        volatility.to_clipboard()
+        return volatility
+
+
+# TODO add minimum variance and mean variance optimized weights
+class MinimumVarianceWeight(_PriceBasedWeight):
+    pass
+
+
 def main():
     # AGRO.ST, AAK.ST, ABB.ST
     tickers = ["AGRO.ST", "AAK.ST", "ABB.ST"]
@@ -119,11 +289,15 @@ def main():
     print(invest_uni)
     signal_df = invest_uni.get_eligibility_df(True)
 
+    signal_df.iloc[1, :] = [-1, -1, 1]
+    signal_df.iloc[2, :] = [-1, -1, -1]
+    signal_df.iloc[4, :] = [np.nan, -1, -1]
+    signal_df.iloc[4, :] = [np.nan, 1, -1]
     print(signal_df)
-    eqw = StaticWeight()
-    eqw.signal_df = signal_df
-    print(eqw.get_weights())
-    print(eqw)
+
+    inv_vol = VolatilityWeight(60, True)
+    inv_vol.signal_df = signal_df
+    print(inv_vol.get_weights())
 
 
 if __name__ == '__main__':
