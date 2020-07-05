@@ -9,6 +9,7 @@ import numpy as np
 from financial_database import FinancialDatabase
 from config_database import my_database_name
 from finance_tools import rolling_average
+from dataframe_tools import merge_two_dataframes_as_of
 
 
 class InvestmentUniverse:
@@ -29,18 +30,14 @@ class InvestmentUniverse:
             raise ValueError('Column headers (i.e. tickers) are not the same.'
                              '\nTickers in current investment universe: %s' % ', '.join(self.tickers)
                              + '\nTickers in custom filter: %s' % ', '.join(list(custom_eligibility_df)))
+        elif not (custom_eligibility_df.index.is_monotonic_increasing and isinstance(custom_eligibility_df.index, pd.DatetimeIndex)):
+            raise ValueError('Index needs to be a monotonically increasing DatetimeIndex.')
         self._apply_dataframe(custom_eligibility_df, filter_desc)
 
     def _apply_dataframe(self, df: pd.DataFrame, filter_desc: str):
         self._filter_desc_list.append(filter_desc)
         # merge (as of) the new filter to the current observation calendar
-        new_filter = pd.DataFrame(index=self.observation_calendar, columns=['temp_col_name'], data=self.observation_calendar)
-        df_temp = df.copy()
-        df_temp.reset_index(inplace=True)
-        right_on_col_name = list(df_temp)[0]
-        new_filter = pd.merge_asof(new_filter, df, left_on='temp_col_name', right_on=right_on_col_name)
-        new_filter.set_index('temp_col_name', inplace=True)
-
+        new_filter = merge_two_dataframes_as_of(pd.DataFrame(index=self.observation_calendar), df)
         if self._filter_has_been_applied:
             self._eligibility_df = self._eligibility_df * new_filter.values
         else:
@@ -84,10 +81,15 @@ class InvestmentUniverse:
 
     # ------------------------------------------------------------------------------------------------------------------
     # get setter methods
-    @property
-    def eligibility_df(self):
+    def get_eligibility_df(self, only_eligibile_tickers: bool = False):
         if self._filter_has_been_applied:
-            return self._eligibility_df
+            if only_eligibile_tickers:
+                eligible_tickers = self.get_eligible_tickers()
+                if not len(eligible_tickers):
+                    raise ValueError('No tickers passed the filter: %s' % ', '.join(self._filter_desc_list))
+                return self._eligibility_df[eligible_tickers].replace(0, np.nan)
+            else:
+                return self._eligibility_df.replace(0, np.nan)
         else:
             return ValueError('No filter has been applied yet.')
 
@@ -99,7 +101,7 @@ class InvestmentUniverse:
     def observation_calendar(self, observation_calendar: pd.DatetimeIndex):
         """
         Check if the observation calendar is monotonically increasing. Reset the eligibility DataFrame.
-        :param observation_calendar:DatatimeIndex
+        :param observation_calendar:DatetimeIndex
         :return: None
         """
         if observation_calendar.is_monotonic_increasing and isinstance(observation_calendar, pd.DatetimeIndex):
@@ -130,18 +132,3 @@ class InvestmentUniverse:
 
     def __repr__(self):
         return '<InvestmentUniverse(filter=%s)>' % ', '.join(self._filter_desc_list)
-
-
-def main():
-    # AGRO.ST, AAK.ST, ABB.ST
-    tickers = ["AGRO.ST", "AAK.ST", "ABB.ST"]
-    invest_uni = InvestmentUniverse(tickers, '2018', '2020', freq='M')
-    print(invest_uni)
-    invest_uni.apply_liquidity_filter(60, 300000, 'sek')
-    print(invest_uni)
-    invest_uni.eligibility_df.to_clipboard()
-
-
-if __name__ == '__main__':
-    main()
-
