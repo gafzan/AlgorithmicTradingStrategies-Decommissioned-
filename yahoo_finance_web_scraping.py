@@ -56,7 +56,7 @@ def retrieve_tickers_from_yahoo(original_url: str)->pd.DataFrame:
 def main():
     url = 'https://finance.yahoo.com/screener/unsaved/85f0e72f-6999-426b-a920-4577416f5379'
     file_name = 'china_tickers'
-    tickers_df = retrieve_tickers_from_yahoo_v2(url)  # tickers scrapped from Yahoo Finance
+    tickers_df = retrieve_tickers_from_yahoo(url)  # tickers scrapped from Yahoo Finance
     save_path = excel_ticker_folder + '\\' + file_name + '_' + str(date.today()) + '.xlsx'
     save_df(tickers_df, full_path=save_path, sheet_name_list='tickers')
     logger.info('Tickers saved in an excel file: {}'.format(save_path))
