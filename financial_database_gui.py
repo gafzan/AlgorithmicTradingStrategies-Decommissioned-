@@ -11,7 +11,7 @@ from datetime import date
 import logging
 
 from models_db import Underlying
-from financial_database import YahooFinanceFeeder, FinancialDatabase
+from financial_database import YahooFinanceFeeder, BloombergFeeder, FinancialDatabase
 from config_database import my_database_name, excel_ticker_folder, data_request_folder
 from excel_tools import save_df, format_requested_data_workbook
 from general_tools import list_grouper, progression_bar
@@ -19,12 +19,16 @@ from general_tools import list_grouper, progression_bar
 __DEFAULT_FONT__ = ("Arial", 11)
 __DEFAULT_BOLD_FONT__ = __DEFAULT_FONT__ + ('bold', )
 
-
+data_source_list = ['Yahoo Finance', 'Bloomberg', 'Huggorm']
 method_list = ['Manually', 'Using Excel', 'Using URL', 'Using attribute filter']
 action_method_dict = {'Add underlying': [method_list[0], method_list[1], method_list[2]],
                       'Refresh underlying': [method_list[0], method_list[1], method_list[3]],
                       'Delete underlying': [method_list[0], method_list[1], method_list[3]],
                       'Download data': [method_list[0], method_list[1], method_list[3]]}
+action_data_source_dict = {'Add underlying': [data_source_list[0], data_source_list[1]],
+                      'Refresh underlying': [data_source_list[0], data_source_list[1]],
+                      'Delete underlying': [data_source_list[2]],
+                      'Download data': [data_source_list[2]]}
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -51,7 +55,9 @@ class HandleUnderlyingWindow(Tk):
         # action drop-down list
         Label(frame, text='Action:', justify='l', font=__DEFAULT_FONT__).grid(row=1)
         self.action_combo = Combobox(frame)
-        self.action_combo.bind('<<ComboboxSelected>>', self.update_method_combo_box)
+        self.action_combo.bind('<<ComboboxSelected>>', self.update_method_and_data_source_combo_box)
+        # self.action_combo.bind('<<ComboboxSelected>>', self.update_data_source_combo_box)
+
         self.action_combo['values'] = tuple(action_method_dict.keys())
         self.action_combo.grid(row=1, column=1)
 
@@ -60,13 +66,28 @@ class HandleUnderlyingWindow(Tk):
         self.method_combo = Combobox(frame)
         self.method_combo.grid(row=2, column=1)
 
+        # method drop-down list (dependent on the action drop-list)
+        Label(frame, text='Data source:', justify='l', font=__DEFAULT_FONT__).grid(row=3)
+        self.data_source_combo = Combobox(frame)
+        self.data_source_combo.grid(row=3, column=1)
+
         Button(frame, text='Perform action', fg='green', font=__DEFAULT_FONT__,
-               command=self.retrieve_tickers_click).grid(row=3, pady=10, columnspan=2)
+               command=self.retrieve_tickers_click).grid(row=4, pady=10, columnspan=2)
         frame.grid(row=1, sticky='w')
 
-    def update_method_combo_box(self, event=None):
+    def update_method_and_data_source_combo_box(self, event=None):
         self.method_combo['values'] = action_method_dict[self.action_combo.get()]
         self.method_combo.current(0)
+        self.data_source_combo['values'] = action_data_source_dict[self.action_combo.get()]
+        self.data_source_combo.current(0)
+
+    # def update_method_combo_box(self, event=None):
+    #     self.method_combo['values'] = action_method_dict[self.action_combo.get()]
+    #     self.method_combo.current(0)
+    #
+    # def update_data_source_combo_box(self, event=None):
+    #     self.data_source_combo['values'] = action_data_source_dict[self.action_combo.get()]
+    #     self.data_source_combo.current(0)
 
     def retrieve_tickers_click(self):
         if self.action_combo.get() == '':
@@ -106,7 +127,16 @@ class _InputWindow(Toplevel):
     def apply_result(self):
         if self.result is not None:
             action = self.parent.action_combo.get()
-            fin_db = YahooFinanceFeeder(my_database_name)  # use to add, refresh and delete data
+
+            data_source = self.parent.data_source_combo.get()
+            # initialize a database handler used to add and refresh data
+            if data_source == data_source_list[0]:
+                fin_db = YahooFinanceFeeder(my_database_name)
+            elif data_source == data_source_list[1]:
+                fin_db = BloombergFeeder(my_database_name)
+            else:
+                fin_db = FinancialDatabase(my_database_name)
+
             if action == 'Add underlying':
                 counter = 1
                 batch_size = 15
@@ -152,7 +182,6 @@ class _InputWindow(Toplevel):
             raise ValueError('No tickers selected (self.result is None)')
 
     def create_widgets(self):
-        # add a label and a button
         pass
 
     def cancel(self, event=None):
