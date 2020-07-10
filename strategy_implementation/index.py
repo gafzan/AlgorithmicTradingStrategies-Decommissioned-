@@ -9,11 +9,10 @@ import logging
 # my modules
 from financial_database import FinancialDatabase
 from config_database import my_database_name
-from investment_universe import InvestmentUniverse
+from strategy_implementation.investment_universe import InvestmentUniverse
 from dataframe_tools import merge_two_dataframes_as_of
 from finance_tools import index_daily_rebalanced
-import index_signal_new
-import index_weight_new
+from strategy_implementation import strategy_weight, strategy_signal
 
 # Logger
 logger = logging.getLogger(__name__)
@@ -95,10 +94,11 @@ class Index(Basket):
         weight_df = self.weight.get_weights()
         price_df = self.basket_prices(start_date=weight_df.index[0], end_date=end_date)
         daily_returns = price_df.pct_change()
-        daily_returns.iloc[0, :] = 0
         index_result = index_daily_rebalanced(daily_returns, weight_df, self.transaction_cost, self.index_fee,
-                                              self.weight_rebalance_lag, self.weight_observation_lag, self.initial_value,
-                                              self.volatility_target, self.volatility_observation_lag, self.risky_weight_cap)
+                                              self.weight_rebalance_lag, self.weight_observation_lag,
+                                              self.initial_value,
+                                              self.volatility_target, self.volatility_observation_lag,
+                                              self.risky_weight_cap)
         if only_index:
             try:
                 return index_result.loc[:, ['NET_INDEX']].dropna()
@@ -116,7 +116,7 @@ class Index(Basket):
     def _assign_signal_to_weight(self):
         eligibility_df = self._get_eligibility_df()
         if self.signal is None:
-            signal = index_signal_new.Signal(eligibility_df=eligibility_df)  # default signal is just the eligibility DataFrame
+            signal = strategy_signal.Signal(eligibility_df=eligibility_df)  # default signal is just the eligibility DataFrame
             self.weight.signal_df = signal.get_signal()
         else:
             self.signal.eligibility_df = eligibility_df
@@ -132,7 +132,7 @@ class Index(Basket):
     def signal(self, signal):
         if signal is None:
             self._signal = None
-        elif issubclass(type(signal), index_signal_new.Signal) or isinstance(signal, index_signal_new.Signal):
+        elif issubclass(type(signal), signal.Signal) or isinstance(signal, signal.Signal):
             self._signal = signal
         else:
             raise ValueError('Needs to be of type that is a subclass of _Signal.')
@@ -145,7 +145,7 @@ class Index(Basket):
     def weight(self, weight):
         if weight is None:
             self._weight = None
-        elif issubclass(type(weight), index_weight_new.Weight):
+        elif issubclass(type(weight), weight.Weight):
             self._weight = weight
         else:
             raise ValueError('Needs to be of type that is a subclass of Weight.')
@@ -254,9 +254,9 @@ def main():
 
     index = Index(invest_uni, transaction_cost=0.001, index_fee=0.005, volatility_target=0.1,
                   volatility_observation_lag=60)
-    index.weight = index_weight_new.EqualWeight()
+    index.weight = strategy_weight.EqualWeight()
     eqw_index = index.get_back_test(only_index=True)
-    index.weight = index_weight_new.VolatilityWeight(60)
+    index.weight = strategy_weight.VolatilityWeight(60)
     inv_vol_index = index.get_back_test(only_index=True)
     combined = eqw_index.join(inv_vol_index, rsuffix='_inverse_volatility'.upper())
 
