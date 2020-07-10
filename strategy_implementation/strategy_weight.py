@@ -1,5 +1,5 @@
 """
-index_weight.py
+strategy_weight.py
 """
 import pandas as pd
 from pandas.tseries.offsets import BDay
@@ -13,8 +13,6 @@ from config_database import my_database_name
 from dataframe_tools import merge_two_dataframes_as_of
 from finance_tools import realized_volatility_v2
 
-# TODO test
-from investment_universe import InvestmentUniverse
 
 # Logger
 logger = logging.getLogger(__name__)
@@ -259,7 +257,7 @@ class VolatilityWeight(_PriceBasedProportionalWeight):
     """Class definition of VolatilityWeight. Subclass of _PriceBasedProportionalWeight."""
 
     def __init__(self, volatility_observation_period: {int, list}, inversely: bool = True, signal_df: pd.DataFrame = None,
-                 total_return: bool = True, currency: str = None, price_obs_freq: {str, int} = None):
+                 total_return: bool = True, currency: str = None, price_obs_freq: {str, int}=None):
         super().__init__(signal_df=signal_df, total_return=total_return, currency=currency,
                          price_obs_freq=price_obs_freq, inversely=inversely)
         self.volatility_observation_period = volatility_observation_period

@@ -1,5 +1,5 @@
 """
-index_signal.py
+strategy_signal.py
 """
 import pandas as pd
 from pandas.tseries.offsets import BDay
@@ -12,9 +12,6 @@ from financial_database import FinancialDatabase
 from config_database import my_database_name
 from finance_tools import rolling_average, realized_volatility_v2
 from dataframe_tools import merge_two_dataframes_as_of
-
-# TODO test
-from investment_universe import InvestmentUniverse
 
 
 class Signal:
@@ -290,7 +287,7 @@ class SimpleMovingAverageCrossSignal(_PriceBasedSignal):
 class VolatilityRankSignal(_PriceBasedRankSignal):
     """Class definition of VolatilityRankSignal. Subclass of _PriceBasedRankSignal."""
     def __init__(self, volatility_observation_period: {int, list}, rank_number: int = None, rank_fraction: float = None,
-                 descending: bool = True, include: bool = True, tickers: {str, list}=None, observation_calendar: pd.DatetimeIndex = None,
+                 descending: bool = False, include: bool = True, tickers: {str, list}=None, observation_calendar: pd.DatetimeIndex = None,
                  eligibility_df: pd.DataFrame = None, total_return: bool = None, currency: str = None, price_obs_freq: {str, int} = None):
         super().__init__(tickers=tickers, observation_calendar=observation_calendar, eligibility_df=eligibility_df,
                          total_return=total_return, currency=currency, price_obs_freq=price_obs_freq,
