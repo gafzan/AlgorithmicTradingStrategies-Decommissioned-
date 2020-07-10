@@ -3,6 +3,7 @@ investment_universe.py
 """
 import pandas as pd
 from pandas.tseries.offsets import BDay
+import pandas.core.common as com
 import numpy as np
 
 # my modules
@@ -15,8 +16,17 @@ from dataframe_tools import merge_two_dataframes_as_of
 class InvestmentUniverse:
     """Class definition for InvestmentUniverse"""
 
-    def __init__(self, tickers: {str, list, tuple}, start=None, end=None, periods=None, freq=None):
-        self._observation_calendar = pd.date_range(start, end, periods, freq)
+    def __init__(self, tickers: {str, list, tuple}, start=None, end=None, periods=None, freq=None,
+                 observation_calendar: pd.DatetimeIndex = None):
+        if com.count_not_none(start, end, periods, freq) != 0:
+            self._observation_calendar = pd.date_range(start, end, periods, freq)
+        else:
+            if observation_calendar.is_monotonic_increasing:
+                self._observation_calendar = observation_calendar
+            else:
+                raise ValueError('observation_calendar needs to be an instance of a DatatimeIndex object that is '
+                                 'monotonic increasing')
+
         self.tickers = tickers
         self._financial_database_handler = FinancialDatabase(my_database_name)
         self._filter_has_been_applied = False
