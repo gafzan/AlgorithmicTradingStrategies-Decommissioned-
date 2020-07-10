@@ -236,94 +236,69 @@ def index_calculation(price_df: pd.DataFrame, weight_df: pd.DataFrame, transacti
 
 
 def index_daily_rebalanced(multivariate_daily_returns: pd.DataFrame, weights: pd.DataFrame,
-                           transaction_costs: float = 0, rolling_fee_pa: float = 0, rebalance_lag: int = 1,
+                           transaction_costs: float = 0, rolling_fee_pa: float = 0, weight_smoothing_lag: int = 1,
                            weight_observation_lag: int = 1, initial_value: float = 100, volatility_target: float = None,
                            volatility_lag: {int, list, tuple}=60, risky_weight_cap: float=1):
-    if rebalance_lag < 1:
-        raise ValueError('rebalance_lag needs to be an integer larger or equal to 1.')
+    # calculate the gross return of the index
+    num_instruments = multivariate_daily_returns.shape[1]
     index_result = merge_two_dataframes_as_of(multivariate_daily_returns, weights, '_WEIGHT')
-    # smooth the weights
-    weight_col_names = list(index_result)[multivariate_daily_returns.shape[1]:]
-    index_result.loc[:, weight_col_names] = index_result.loc[:, weight_col_names].rolling(window=rebalance_lag, min_periods=1).mean()
-    # calculate the weighted returns
-    weighted_return_col_names = [col_name + '_WEIGHTED_RETURN' for col_name in list(multivariate_daily_returns)]
-    index_result[weighted_return_col_names] = index_result.loc[:, list(multivariate_daily_returns)] * index_result.loc[:, weight_col_names].shift(weight_observation_lag).values
+    index_result.iloc[:, num_instruments:] = index_result.iloc[:, num_instruments:].rolling(window=weight_smoothing_lag, min_periods=1).mean()  # smooth the weights to reduce turnover
+    index_result[[col_name + '_WEIGHTED_RETURN' for col_name in list(multivariate_daily_returns)]] = index_result.iloc[:, :num_instruments] * index_result.iloc[:, num_instruments:].shift(weight_observation_lag).values
+    index_result['GROSS_INDEX_RETURN'] = index_result.iloc[:, 2 * num_instruments:].sum(axis=1, skipna=False)
+
+    # add volatility target mechanism if applicable
     if volatility_target:
-        print('perf VT')
-        index_result = _add_volatility_target(index_result, list(multivariate_daily_returns), volatility_target, volatility_lag,
-                                              risky_weight_cap, weight_observation_lag)
+        index_result = _add_volatility_target(index_result, volatility_target, volatility_lag, risky_weight_cap, num_instruments,
+                                              weight_observation_lag)
     # calculate the gross index
-    index_result['GROSS_INDEX_RETURN'] = index_result[weighted_return_col_names].sum(axis=1)  # TODO should be the same
     index_result['GROSS_INDEX'] = initial_value * (1 + index_result['GROSS_INDEX_RETURN']).cumprod()
-    index_result.iloc[0, -1] = np.nan
+    start_of_index_i = index_result['GROSS_INDEX_RETURN'].index.get_loc(index_result['GROSS_INDEX_RETURN'].first_valid_index()) - 1
+    index_result.iloc[start_of_index_i, -1] = initial_value
+
+    # adjust index for transaction costs and index fees if any
     if transaction_costs != 0 or rolling_fee_pa != 0:
-        # calculate the index net of transaction costs and fees
-        index_result = _add_net_index(index_result, transaction_costs, rolling_fee_pa, volatility_target is not None)
-    # set all index values to NaN where there should not be any value available
-    if volatility_target:
-        try:
-            vol_lag = max(volatility_lag)
-        except TypeError:
-            vol_lag = volatility_lag
-        index_lag = max(rebalance_lag, vol_lag)
-    else:
-        index_lag = rebalance_lag
-    gross_index_i = list(index_result).index('GROSS_INDEX')
-    index_result.iloc[:index_lag, gross_index_i] = np.nan
-    try:
-        net_index_return_i = list(index_result).index('NET_INDEX_RETURN')
-        index_result.iloc[:index_lag + 1, net_index_return_i] = np.nan
-        index_result.iloc[:index_lag, net_index_return_i + 1] = np.nan
-        index_result.loc[:, 'NET_INDEX'] = initial_value * index_result.loc[:, 'NET_INDEX'] / index_result.iloc[index_lag, net_index_return_i + 1]  # normalize
-    except ValueError:
-        pass
-
+        # add a column with the net index return
+        index_result = _add_net_index_return(index_result, transaction_costs, rolling_fee_pa, num_instruments)
+        # calculate the net index
+        index_result['NET_INDEX'] = initial_value * (1 + index_result['NET_INDEX_RETURN']).cumprod()
+        index_result.iloc[start_of_index_i, -1] = initial_value
     return index_result
 
 
-def _add_volatility_target(index_result: pd.DataFrame, price_return_col_names: list, volatility_target: float, volatility_lag: {int, list},
-                           risky_weight_cap: float, weight_observation_lag: int):
-    index_result = index_result.copy()
-    # implement a volatility target overlay
-    weighted_return_col_names = [col_name for col_name in list(index_result) if col_name.endswith('_WEIGHTED_RETURN')]
-    gross_index_return_pre_vt = index_result[weighted_return_col_names].sum(axis=1)
-    realized_vol = realized_volatility_v2(multivariate_return_df=gross_index_return_pre_vt, vol_lag=volatility_lag)
-    risky_weight = volatility_target / realized_vol
+def _add_volatility_target(index_result: pd.DataFrame, volatility_target: float, volatility_lag: {int, list},
+                           risky_weight_cap: float, number_of_instruments: int, weight_observation_lag: int):
+    # calculate the risky weight
+    realized_volatility_gross_index = realized_volatility_v2(multivariate_return_df=index_result[['GROSS_INDEX_RETURN']], vol_lag=volatility_lag)
+    risky_weight = volatility_target / realized_volatility_gross_index
     risky_weight[risky_weight >= risky_weight_cap] = risky_weight_cap
-    risky_weight.fillna(0, inplace=True)
-    index_result = index_result.join(
-        pd.DataFrame(data=risky_weight.values, index=risky_weight.index, columns=['RISKY_WEIGHT']))
+    index_result = index_result.join(pd.DataFrame(data=risky_weight.values, index=risky_weight.index, columns=['RISKY_WEIGHT']))  # TODO inplace?
 
-    # create new columns with the instrument weights after VT
-    weight_col_names = [col_name for col_name in list(index_result) if col_name.endswith('_WEIGHT') and col_name != 'RISKY_WEIGHT']
-    weight_post_vt_col_names = [col_name + '_POST_VT' for col_name in weight_col_names]
-    index_result[weight_post_vt_col_names] = index_result.loc[:, weight_col_names].mul(risky_weight, axis=0)
+    # add new weights columns with weights adjusted based on the risky weight
+    weight_post_vt_col_names = [col_name + '_WEIGHT_POST_VT' for col_name in list(index_result)[:number_of_instruments]]
+    index_result[weight_post_vt_col_names] = index_result.iloc[:, number_of_instruments: 2 * number_of_instruments].multiply(index_result['RISKY_WEIGHT'], axis=0)
 
-    # update the weighted returns
-    index_result[weighted_return_col_names] = index_result.loc[:, price_return_col_names] \
-                                              * index_result.loc[:, weight_post_vt_col_names]\
-                                                  .shift(weight_observation_lag).values
+    # adjust the weighted returns and gross index returns
+    weighted_return_col_names = [col_name + '_WEIGHTED_RETURN' for col_name in list(index_result)[:number_of_instruments]]
+    index_result[weighted_return_col_names] = index_result.iloc[:, :number_of_instruments] * index_result.loc[:, weight_post_vt_col_names].shift(weight_observation_lag).values
+    index_result['GROSS_INDEX_RETURN'] = index_result.loc[:, weighted_return_col_names].sum(axis=1, skipna=False)
     return index_result
 
 
-def _add_net_index(index_result: pd.DataFrame, transaction_costs: float, rolling_fee_pa: float,
-                   has_volatility_target: bool):
-    index_result = index_result.copy()
-    # calculate the index net of transaction costs ...
-    if has_volatility_target:
-        weight_col = [col_name for col_name in list(index_result) if col_name.endswith('_WEIGHT_POST_VT')]
-    else:
-        weight_col = [col_name for col_name in list(index_result) if col_name.endswith('_WEIGHT') and col_name != 'RISKY_WEIGHT']
-    abs_weight_delta = index_result[weight_col].diff().abs().sum(axis=1)
+def _add_net_index_return(index_result: pd.DataFrame, transaction_costs: float, rolling_fee_pa: float,
+                          number_of_instruments: int):
+    # calculate the index net of transaction costs
+    weight_col_names = [col_name for col_name in list(index_result) if col_name.endswith('_WEIGHT_POST_VT')]
+    if not len(weight_col_names):
+        weight_col_names = list(index_result)[number_of_instruments: 2 * number_of_instruments]
+
+    abs_weight_delta = index_result[weight_col_names].diff().abs().sum(axis=1)
     index_result['NET_INDEX_RETURN'] = index_result['GROSS_INDEX_RETURN'] - transaction_costs * abs_weight_delta.values
 
-    # ... and the rolling fee p.a.
+    # calculate the index net of index fees
     dt = [None] + [(index_result.index[n] - index_result.index[n - 1]).days / 365 for n in
                    range(1, len(index_result.index))]
     dt_s = pd.Series(data=dt, index=index_result.index)
     index_result['NET_INDEX_RETURN'] -= rolling_fee_pa * dt_s
-    index_result.iloc[0, -1] = 0
-    index_result['NET_INDEX'] = (1 + index_result['NET_INDEX_RETURN']).cumprod()
     return index_result
 
 
