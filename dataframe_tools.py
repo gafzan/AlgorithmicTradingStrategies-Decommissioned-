@@ -46,10 +46,18 @@ def merge_two_dataframes_as_of(left_df: pd.DataFrame, right_df: pd.DataFrame, le
     result.reset_index(inplace=True)
     right_df.reset_index(inplace=True)
     index_left_on_col_name = list(result)[0]
-    weights_left_on_col_name = list(right_df)[0]
-    result = pd.merge_asof(result, right_df, left_on=index_left_on_col_name, right_on=weights_left_on_col_name,
+    index_right_on_col_name = list(right_df)[0]
+    result = pd.merge_asof(result, right_df, left_on=index_left_on_col_name, right_on=index_right_on_col_name,
                            suffixes=('', left_suffix))
     result.set_index(list(result)[0], inplace=True)
+    try:
+        result.drop([index_left_on_col_name], inplace=True, axis=1)
+    except KeyError:
+        pass
+    try:
+        result.drop([index_right_on_col_name], inplace=True, axis=1)
+    except KeyError:
+        pass
     return result
 
 
