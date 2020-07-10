@@ -33,15 +33,19 @@ class Basket:
         self.total_return = total_return
         self.dividend_tax = dividend_tax
 
-    def basket_prices(self, start_date: {date, datetime}=None, end_date: {date, datetime}=None):
+    def basket_prices(self, start_date: {date, datetime}=None, end_date: {date, datetime}=None,
+                      forward_fill_na: bool = True):
         logger.debug('Get basket price.')
         financial_database_handler = FinancialDatabase(my_database_name, False)
         tickers = self.investment_universe.get_eligible_tickers()
         if self.total_return:
-            return financial_database_handler.get_total_return_df(tickers, start_date, end_date, self.dividend_tax,
+            price = financial_database_handler.get_total_return_df(tickers, start_date, end_date, self.dividend_tax,
                                                                   self.currency)
         else:
-            return financial_database_handler.get_close_price_df(tickers, start_date, end_date, self.currency)
+            price = financial_database_handler.get_close_price_df(tickers, start_date, end_date, self.currency)
+        if forward_fill_na:
+            price.fillna(inplace=True, method='ffill')
+        return price
 
     # ------------------------------------------------------------------------------------------------------------------
     # getter and setter methods
