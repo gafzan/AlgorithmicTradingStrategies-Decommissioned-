@@ -29,6 +29,8 @@ logger.addHandler(stream_handler)
 
 class BloombergConnection:
 
+    batch_size = 100
+
     def __init__(self, use_debug: bool=True):
         self.con = pdblp.BCon(debug=use_debug, port=8194, timeout=10000)
         self.con.start()
@@ -95,8 +97,7 @@ class BloombergConnection:
 
         # loop through the batches of tickers
         daily_data_bbg_df = None
-        batch_size = 25
-        ticker_batches = list_grouper(tickers, batch_size)
+        ticker_batches = list_grouper(tickers, self.batch_size)
         counter = 1
         for ticker_sub_list in ticker_batches:
             progression_bar(counter, len(ticker_batches))
@@ -139,8 +140,7 @@ class BloombergConnection:
 
         # loop through the batches of tickers
         dividend_bbg_df = None
-        batch_size = 25
-        ticker_batches = list_grouper(tickers, batch_size)
+        ticker_batches = list_grouper(tickers, self.batch_size)
         counter = 1
         for ticker_sub_list in ticker_batches:
             progression_bar(counter, len(ticker_batches))
