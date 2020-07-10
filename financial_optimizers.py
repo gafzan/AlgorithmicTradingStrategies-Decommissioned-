@@ -106,7 +106,7 @@ def get_instrument_weight_bounds(min_instrument_weight: {float, list, tuple}, ma
 
 
 def optimal_mean_variance_portfolio_weights_with_constraints(mean_returns: np.array, covariance_matrix, initial_guess: np.array = None, min_total_weight: float = 0.,  max_total_weight: float = 1.,
-                                                             min_instrument_weight: {float, list, tuple}=0., max_instrument_weight: {float, list, tuple}=1., risk_aversion_factor: int = 1, return_target: float = 0):
+                                                             min_instrument_weight: {float, list, tuple}=0., max_instrument_weight: {float, list, tuple}=1., risk_aversion_factor: float = 1, return_target: float = 0):
     num_assets = covariance_matrix.shape[0]
     if initial_guess is None:  # if not initial guess is provided, use equal weighting as an initial guess
         initial_guess = np.array(num_assets * [1 / num_assets])
