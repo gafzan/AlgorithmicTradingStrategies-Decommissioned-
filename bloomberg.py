@@ -224,7 +224,7 @@ class BloombergConnection:
                                                       columns='field', aggfunc=lambda x: ' '.join(str(v) for v in x))
         return underlying_data_bbg_pivot_df
 
-    def get_index_members(self, index_ticker: str, observation_date: {datetime, list}) -> {list, dict}:
+    def get_index_members(self, index_ticker: str, observation_date: {datetime, list}=None) -> {list, dict}:
         """
         Returns a list or a dictionary (key = datetime, values = list of tickers) of index members for the given ticker
         and the observation date(s)
@@ -232,6 +232,11 @@ class BloombergConnection:
         :param observation_date: datetime or list of datetime
         :return: list of strings or dictionary
         """
+        # handle various observation date inputs
+        if observation_date is None:
+            observation_date = datetime.today()
+        elif isinstance(observation_date, pd.DatetimeIndex):
+            observation_date = [obs_date for obs_date in observation_date]
         if type(observation_date) != list:
             return_dict = False
             observation_date = [observation_date]
@@ -239,6 +244,7 @@ class BloombergConnection:
             return_dict = True
         result_dict = {}
         for obs_date in observation_date:
+            logger.debug('Donwloading historical index members of {} observed at {} from Bloomberg.'.format(index_ticker.upper(), obs_date))
             bbg_obs_date = self.bbg_date(obs_date)
             bulk_data_bbg = self.con.bulkref(index_ticker, 'INDX_MWEIGHT_HIST', [('END_DATE_OVERRIDE', bbg_obs_date)])
             index_members = bulk_data_bbg[bulk_data_bbg['name'] == 'Index Member']['value'].values
