@@ -224,12 +224,14 @@ class BloombergConnection:
                                                       columns='field', aggfunc=lambda x: ' '.join(str(v) for v in x))
         return underlying_data_bbg_pivot_df
 
-    def get_index_members(self, index_ticker: str, observation_date: {datetime, list}=None) -> {list, dict}:
+    def get_index_members(self, index_ticker: str, observation_date: {datetime, list}=None,
+                          add_bbg_suffix: bool = True) -> {list, dict}:
         """
         Returns a list or a dictionary (key = datetime, values = list of tickers) of index members for the given ticker
-        and the observation date(s)
+        and the observation date(s). If Observation dates are not given, script returns the index members as of today.
         :param index_ticker: string
         :param observation_date: datetime or list of datetime
+        :param add_bbg_suffix: bool
         :return: list of strings or dictionary
         """
         # handle various observation date inputs
@@ -248,11 +250,40 @@ class BloombergConnection:
             bbg_obs_date = self.bbg_date(obs_date)
             bulk_data_bbg = self.con.bulkref(index_ticker, 'INDX_MWEIGHT_HIST', [('END_DATE_OVERRIDE', bbg_obs_date)])
             index_members = bulk_data_bbg[bulk_data_bbg['name'] == 'Index Member']['value'].values
+            if add_bbg_suffix:
+                index_members = self.add_bbg_ticker_suffix(index_members)
             result_dict.update({obs_date: index_members})
         if return_dict:
             return result_dict
         else:
             return result_dict[observation_date[0]]
+
+    def get_index_inclusion_df(self, index_ticker: str, observation_calendar: pd.DatetimeIndex,
+                               add_bbg_suffix: bool = True) -> pd.DataFrame:
+        """
+        Returns a DataFrame with tickers in alphabetic order as column headers and observation dates as index. Vaue is 1
+        if the ticker is included in the index for that particular observation date, else 0.
+        :param index_ticker: str
+        :param observation_calendar: pd.DatetimeIndex
+        :param add_bbg_suffix: bool
+        :return: pd.DataFrame
+        """
+        obs_date_ticker_list_dict = self.get_index_members(index_ticker, observation_calendar, add_bbg_suffix)
+        
+        # get all the unique tickers and sort in alphabetic order
+        tickers = []
+        for ticker_list in obs_date_ticker_list_dict.values():
+            tickers.extend(ticker_list)
+        tickers = list(set(tickers))
+        tickers.sort()
+        
+        # loop through all observation dates and set value to 1 if ticker (column) exists in the index, else 0.
+        result_df = pd.DataFrame(columns=tickers)
+        for obs_date in observation_calendar:
+            tickers_in_index = obs_date_ticker_list_dict[obs_date]
+            ticker_inclusivity = [1 if ticker in tickers_in_index else 0 for ticker in tickers]
+            result_df.loc[obs_date] = ticker_inclusivity
+        return result_df
 
     def get_futures_chain(self, generic_futures_index_ticker: str):
         """
