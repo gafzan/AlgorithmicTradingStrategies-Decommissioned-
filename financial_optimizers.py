@@ -1,9 +1,13 @@
 """
 financial_optimizers.py
 """
+import pandas as pd
 import numpy as np
 from matplotlib import pyplot as plt
 from scipy.optimize import minimize
+
+# my modules
+from general_tools import progression_bar_str
 
 
 def total_allocation_constraint(weight, allocation: float, upper_bound: bool = True):
@@ -261,6 +265,40 @@ def efficient_frontier(mean_returns: np.array, covariance_matrix: np.array, allo
         portfolio_return = np.concatenate([portfolio_return, [new_return]])
         portfolio_vol = np.concatenate([portfolio_vol, [new_vol]])
     return portfolio_weight, portfolio_return, portfolio_vol
+
+
+def rolling_mean_variance_implementation(strategy_returns: pd.DataFrame, rolling_window: int, min_total_weight: float = 0.,  max_total_weight: float = 1.,
+                                         min_instrument_weight: {float, list, tuple}=0., max_instrument_weight: {float, list, tuple}=1.,
+                                         risk_aversion_factor: int = 1, return_target: float = 0):
+    # check inputs
+    if rolling_window < 2 or rolling_window > strategy_returns.shape[0]:
+        raise ValueError('rolling_window needs to be larger or equal to 2 and smaller or equal to the length of the '
+                         'strategy_return DataFrame ({}).'.format(strategy_returns.shape[0]))
+    strategy_returns = strategy_returns.copy()
+    calendar = strategy_returns.index
+    strategy_returns.reset_index(inplace=True, drop=True)
+    weight_result = None  # initialize the result
+    for row in strategy_returns.itertuples():
+        index_i = row.Index
+        print(progression_bar_str(index_i + 1, len(calendar)))
+        if index_i >= rolling_window:
+            # select a subsection of the DataFrame and calculate the mean and covariance
+            strategy_returns_sub = strategy_returns.iloc[index_i - rolling_window:index_i, :]
+            mean_returns = strategy_returns_sub.mean().values
+            covariance = np.cov(np.transpose(strategy_returns_sub.values).astype(float))
+
+            # perform mean variance optimization
+            optimal_weights = optimal_mean_variance_portfolio_weights_with_constraints(mean_returns, covariance, weight_result[index_i - 1, :], min_total_weight, max_total_weight, min_instrument_weight, max_instrument_weight, risk_aversion_factor, return_target)
+
+            weight_result = np.vstack([weight_result, optimal_weights])
+        else:
+            # in the beginning, use equal weights
+            equal_weight = np.array(strategy_returns.shape[1] * [1 / strategy_returns.shape[1]])
+            if weight_result is None:
+                weight_result = equal_weight
+            else:
+                weight_result = np.vstack([weight_result, equal_weight])  # add a row to the array
+    return pd.DataFrame(data=weight_result, index=calendar, columns=list(strategy_returns))
 
 
 def main():
