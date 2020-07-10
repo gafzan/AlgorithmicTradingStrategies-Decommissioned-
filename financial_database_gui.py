@@ -176,7 +176,18 @@ class ManualInputWindow(_InputWindow):
 
     def press_enter(self, event=None):
         txt_result = self.entry.get()  # get the text from the entry box
-        tickers = ''.join(txt_result.split()).split(',')  # list of strings with capital letters and no blanks
+        split_tickers = txt_result.split(',')
+        tickers = []
+        for sub_str in split_tickers:
+            adj_str = sub_str.rstrip().lstrip().split(' ')
+            if len(adj_str) == 1:
+                tickers.append(adj_str[0])
+            else:
+                new_adj_str = adj_str[0]
+                for i in range(1, len(adj_str)):
+                    if adj_str[i] != '':
+                        new_adj_str += ' {}'.format(adj_str[i])
+                tickers.append(new_adj_str)
         tickers = [ticker for ticker in tickers if len(ticker) > 0]  # remove any empty strings (mistakenly put ,,)
         self.result = tickers
         self.cancel()
