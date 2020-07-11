@@ -7,9 +7,9 @@ import pandas.core.common as com
 import numpy as np
 
 # my modules
-from financial_database import FinancialDatabase
-from config_database import my_database_name
-from finance_tools import rolling_average
+from database.financial_database import FinancialDatabase
+from database.config_database import my_database_name
+from financial_analysis.finance_tools import rolling_average
 from dataframe_tools import merge_two_dataframes_as_of
 
 
@@ -101,7 +101,7 @@ class InvestmentUniverse:
             else:
                 return self._eligibility_df.replace(0, np.nan)
         else:
-            return ValueError('No filter has been applied yet.')
+            raise ValueError('No filter has been applied yet.')
 
     @property
     def observation_calendar(self):
