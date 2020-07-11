@@ -4,7 +4,7 @@ index_implementation.py
 from matplotlib import pyplot as plt
 
 # my modules
-from algorithmic_strategy.index import Index
+from algorithmic_strategy.strategy import Index
 from algorithmic_strategy.strategy_weight import EqualWeight, VolatilityWeight
 from algorithmic_strategy.strategy_signal import VolatilityRankSignal
 from algorithmic_strategy.investment_universe import InvestmentUniverse

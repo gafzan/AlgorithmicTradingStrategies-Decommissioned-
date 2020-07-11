@@ -1,5 +1,5 @@
 """
-index.py
+strategy.py
 """
 import pandas as pd
 from datetime import date, datetime
