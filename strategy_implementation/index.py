@@ -110,7 +110,31 @@ class Index(Basket):
             return index_result
 
     def get_index_desc_df(self):
-        pass
+        index_desc_df = pd.DataFrame(columns=['Index description'])
+        index_desc_df.loc['Index eligibility:'] = self.investment_universe.get_desc()
+        index_desc_df.loc['Currency:'] = self.currency.upper() if self.currency else 'Local currency'
+        index_desc_df.loc['Return type:'] = 'Total return' if self.total_return else 'Price return'
+        if self.dividend_tax:
+            index_desc_df.loc['Dividend tax:'] = str(round(100 * self.dividend_tax, 2)) + '%'
+        if issubclass(type(self.signal), strategy_signal.Signal):
+            index_desc_df.loc['Signal:'] = type(self.signal).__name__
+        index_desc_df.loc['Weight:'] = type(self.weight).__name__
+        index_desc_df.loc['Index fee p.a.:'] = str(round(100 * self.index_fee, 2)) + '%'
+        index_desc_df.loc['Transaction costs:'] = str(round(100 * self.transaction_cost, 2)) + '%'
+        if self.volatility_target:
+            index_desc_df.loc['Volatility target:'] = str(round(100 * self.volatility_target, 2)) + '%'
+            if isinstance(self.volatility_observation_lag, list):
+                obs_lag_list = [str(obs_lag) for obs_lag in self.volatility_observation_lag]
+                obs_lag_desc = 'Max volatility observed over %s days' % ', '.join(obs_lag_list)
+            else:
+                obs_lag_desc = 'Observed over {} days'.format(self.volatility_observation_lag)
+            index_desc_df.loc['Volatility observation lag:'] = obs_lag_desc
+            index_desc_df.loc['Maximum risky weight:'] = str(round(100 * self.risky_weight_cap, 2)) + '%'
+        index_desc_df.loc['Weight smoothing (days):'] = self.weight_rebalance_lag
+        index_desc_df.loc['Weight observation lag (days):'] = self.weight_observation_lag
+
+
+        return index_desc_df
 
     def _get_eligibility_df(self):
         eligibility_df = self.investment_universe.get_eligibility_df(True)
