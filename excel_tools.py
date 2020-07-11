@@ -14,8 +14,8 @@ from openpyxl.utils import get_column_letter
 # for main module
 from tkinter import *
 from tkinter import filedialog
-from finance_tools import return_and_risk_analysis
-from config_database import base_folder, back_test_folder
+from financial_analysis.finance_tools import return_and_risk_analysis
+from database.config_database import base_folder, back_test_folder
 
 # logger
 logger = logging.getLogger(__name__)
@@ -223,47 +223,37 @@ def format_risk_return_analysis_workbook(complete_workbook_path: str):
     of certain sheets."""
     workbook = load_workbook(complete_workbook_path)
 
-    try:
-        # format the performance sheet
-        performance_sheet = workbook['Performance']
-        performance_sheet.cell(row=1, column=1).value = 'Date'
-        for col in range(1, performance_sheet.max_column + 1):
-            performance_sheet.column_dimensions[get_column_letter(col)].width = 12
-            basic_formatting(sheet=performance_sheet, col=col, cell_formatting='#,##0.00')
-        performance_sheet.freeze_panes = 'B2'
-    except KeyError:
-        raise ValueError("There is no sheet named 'Performance'")
-
-    try:
-        # format the risk and return sheet
-        risk_return_sheet = workbook['Risk and return']
-        risk_return_sheet.column_dimensions['A'].width = 19
-        for col in range(1, risk_return_sheet.max_column + 1):
-            if col == 1:
-                risk_return_sheet.column_dimensions[get_column_letter(col)].width = 19
-            else:
-                risk_return_sheet.column_dimensions[get_column_letter(col)].width = 12
-            for row in range(1, risk_return_sheet.max_row + 1):
-                cell = risk_return_sheet.cell(row=row, column=col)
-                if row == 1:
-                    cell.font = __COLUMN_NAMES_FONT__
-                    cell.fill = __COLUMN_NAMES_FILL__
-                elif col == 1:
-                    cell.fill = __DATE_COLUMN_FILL__
-                elif row == 4:
-                    cell.number_format = '#,##0.00'
-                else:
-                    cell.number_format = '0.00%'
+    for sheet_name in workbook.sheetnames:
+        if sheet_name == 'Risk and return':
+            risk_return_sheet = workbook[sheet_name]
+            risk_return_sheet.column_dimensions['A'].width = 19
+            for col in range(1, risk_return_sheet.max_column + 1):
                 if col == 1:
-                    cell.alignment = Alignment(horizontal='left', vertical='center')
+                    risk_return_sheet.column_dimensions[get_column_letter(col)].width = 19
                 else:
-                    cell.alignment = Alignment(horizontal='center', vertical='center')
-                cell.border = __BORDER__
-    except KeyError:
-        raise ValueError("There is no sheet named 'Risk and return'")
-
-    for sheet_name in ['Rolling 1Y return', 'Rolling 1Y volatility', 'Rolling 1Y drawdown']:
-        try:
+                    risk_return_sheet.column_dimensions[get_column_letter(col)].width = 12
+                for row in range(1, risk_return_sheet.max_row + 1):
+                    cell = risk_return_sheet.cell(row=row, column=col)
+                    if row == 1:
+                        cell.font = __COLUMN_NAMES_FONT__
+                        cell.fill = __COLUMN_NAMES_FILL__
+                    elif col == 1:
+                        cell.fill = __DATE_COLUMN_FILL__
+                    elif row == 4:
+                        cell.number_format = '#,##0.00'
+                    else:
+                        cell.number_format = '0.00%'
+                    if col == 1:
+                        cell.alignment = Alignment(horizontal='left', vertical='center')
+                    else:
+                        cell.alignment = Alignment(horizontal='center', vertical='center')
+                    cell.border = __BORDER__
+        elif sheet_name == 'Description':
+            sheet = workbook[sheet_name]
+            for col in range(1, sheet.max_column + 1):
+                sheet.column_dimensions[get_column_letter(col)].width = 30
+                basic_formatting(sheet=sheet, col=col, horizontal_alignment='left')
+        elif sheet_name in ['Rolling 1Y return', 'Rolling 1Y volatility', 'Rolling 1Y drawdown']:
             # format rolling sheets
             rolling_sheet = workbook[sheet_name]
             rolling_sheet.cell(row=1, column=1).value = 'Date'
@@ -271,32 +261,26 @@ def format_risk_return_analysis_workbook(complete_workbook_path: str):
                 rolling_sheet.column_dimensions[get_column_letter(col)].width = 12
                 basic_formatting(rolling_sheet, col)
             rolling_sheet.freeze_panes = 'B2'
-        except KeyError:
-            raise ValueError("There is no sheet named '{}'".format(sheet_name))
-
-    # format all monthly return tables by looping through each sheet who's name contains the substring 'Return table'
-    return_table_sheet_name_list = [sheet_name for sheet_name in workbook.sheetnames if 'Return table' in sheet_name]
-    for return_table_sheet_name in return_table_sheet_name_list:
-        return_table_sheet = workbook[return_table_sheet_name]
-        return_table_sheet.column_dimensions[get_column_letter(return_table_sheet.max_column)].width = 12
-        for col in range(1, return_table_sheet.max_column + 1):
-            basic_formatting(sheet=return_table_sheet, col=col, last_column_bold=True)
-
-    # format all weight tables by looping through each sheet who's name contains the substring 'weight'
-    weight_sheet_name_list = [sheet_name for sheet_name in workbook.sheetnames if 'weight' in sheet_name.lower()]
-    for weight_sheet_name in weight_sheet_name_list:
-        weight_sheet = workbook[weight_sheet_name]
-        weight_sheet.cell(row=1, column=1).value = 'Rebalancing date'
-        for col in range(1, weight_sheet.max_column + 1):
-            weight_sheet.column_dimensions[get_column_letter(col)].width = 15
-            # made the assumption the date formatting was missing here.
-            basic_formatting(weight_sheet, col)
-        weight_sheet.freeze_panes = 'B2'
-
+        elif 'Return table' in sheet_name:
+            return_table_sheet = workbook[sheet_name]
+            return_table_sheet.column_dimensions[get_column_letter(return_table_sheet.max_column)].width = 12
+            for col in range(1, return_table_sheet.max_column + 1):
+                basic_formatting(sheet=return_table_sheet, col=col, last_column_bold=True)
+        else:
+            sheet = workbook[sheet_name]
+            sheet.cell(row=1, column=1).value = 'Date'
+            if sheet_name == 'Performance':
+                cell_formatting = '#,##0.00'
+            else:
+                cell_formatting = '0.00%'
+            for col in range(1, sheet.max_column + 1):
+                sheet.column_dimensions[get_column_letter(col)].width = 12
+                basic_formatting(sheet=sheet, col=col, cell_formatting=cell_formatting)
+            sheet.freeze_panes = 'B2'
     workbook.save(complete_workbook_path)
 
 
-def basic_formatting(sheet, col, cell_formatting='0.00%', last_column_bold=False):
+def basic_formatting(sheet, col, cell_formatting='0.00%', last_column_bold=False, horizontal_alignment: str = 'center'):
     """
     :param last_column_bold:
     :param sheet:
@@ -313,24 +297,24 @@ def basic_formatting(sheet, col, cell_formatting='0.00%', last_column_bold=False
             cell.fill = __DATE_COLUMN_FILL__
         else:
             cell.number_format = cell_formatting
-        cell.alignment = Alignment(horizontal='center', vertical='center')
+        cell.alignment = Alignment(horizontal=horizontal_alignment, vertical='center')
         cell.border = __BORDER__
         if last_column_bold and col == sheet.max_column and row != 1:
             cell.fill = PatternFill(patternType='solid', fgColor=Color(rgb='EBF1DE'))
             cell.font = Font(bold=True)
 
 
-def main_format_excel_workbook():
+def format_excel_workbook_index_time_series():
     # chose excel file to format
     Tk().withdraw()
-    excel_file_path = filedialog.askopenfile(initialdir=base_folder, title='Select excel file to format.').name
+    excel_file_path = filedialog.askopenfile(initialdir=base_folder, title='Select excel file to format').name
 
     # get the underlying data
     df = load_df(full_path=excel_file_path, sheet_name='result')
     sheet_name_df_dict = return_and_risk_analysis(df, print_results=True, normalize=False)
 
     # save the result
-    save_file_path = filedialog.asksaveasfile(initialdir=back_test_folder, title='Save excel file.',
+    save_file_path = filedialog.asksaveasfile(initialdir=back_test_folder, title='Save excel file',
                                               filetypes=(("Excel files", "*.xlsx"), ("All files", "*.*"))).name
     save_file_path += '.xlsx'
     print(save_file_path)
@@ -341,6 +325,15 @@ def main_format_excel_workbook():
     logger.info('Done!')
 
 
+def main():
+    # chose excel file to format
+    Tk().withdraw()
+    excel_file_path = filedialog.askopenfile(initialdir=base_folder, title='Select excel file to format').name
+
+    # get the underlying data
+    format_requested_data_workbook(excel_file_path)
+
+
 if __name__ == '__main__':
-    main_format_excel_workbook()
+    main()
 
