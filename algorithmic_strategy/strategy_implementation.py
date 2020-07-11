@@ -1,5 +1,5 @@
 """
-index_implementation.py
+strategy_implementation.py
 """
 from matplotlib import pyplot as plt
 
