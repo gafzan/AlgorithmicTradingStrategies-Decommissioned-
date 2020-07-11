@@ -7,11 +7,11 @@ from datetime import date, datetime
 import logging
 
 # my modules
-from financial_database import FinancialDatabase
-from config_database import my_database_name
+from database.financial_database import FinancialDatabase
+from database.config_database import my_database_name
 from strategy_implementation.investment_universe import InvestmentUniverse
 from dataframe_tools import merge_two_dataframes_as_of
-from finance_tools import index_daily_rebalanced
+from financial_analysis.finance_tools import index_daily_rebalanced
 from strategy_implementation import strategy_weight, strategy_signal
 
 # Logger
@@ -59,11 +59,14 @@ class Basket:
         else:
             raise ValueError('dividend_tax needs to be greater or equal to zero.')
 
-    def __repr__(self):
-        return "<Basket(#tickers = {}, currency = {currency}, {total_return}{dividend_tax})>"\
-            .format(len(self.investment_universe.get_eligible_tickers()), currency=self.currency if self.currency else 'local',
+    def get_desc(self):
+        return "currency = {currency}, {total_return}{dividend_tax}"\
+            .format(currency=self.currency if self.currency else 'local',
                     total_return='total return' if self.total_return else 'price return',
                     dividend_tax=' with ' + str(round(self.dividend_tax*100, 2)) + '% dividend tax' if self.dividend_tax and self.total_return else '')
+
+    def __repr__(self):
+        return "<{}({})>".format(type(self).__name__, self.get_desc())
 
 
 class Index(Basket):
@@ -132,7 +135,7 @@ class Index(Basket):
     def signal(self, signal):
         if signal is None:
             self._signal = None
-        elif issubclass(type(signal), signal.Signal) or isinstance(signal, signal.Signal):
+        elif issubclass(type(signal), strategy_signal.Signal) or isinstance(signal, strategy_signal.Signal):
             self._signal = signal
         else:
             raise ValueError('Needs to be of type that is a subclass of _Signal.')
@@ -145,7 +148,7 @@ class Index(Basket):
     def weight(self, weight):
         if weight is None:
             self._weight = None
-        elif issubclass(type(weight), weight.Weight):
+        elif issubclass(type(weight), strategy_weight.Weight):
             self._weight = weight
         else:
             raise ValueError('Needs to be of type that is a subclass of Weight.')
@@ -241,9 +244,6 @@ class Index(Basket):
         if risky_weight_cap <= 0:
             raise ValueError('risky_weight_cap needs to be a float larger than 0.')
         self._risky_weight_cap = risky_weight_cap
-
-    def __repr__(self):
-        return '<Index()>'
 
 
 def main():

@@ -8,10 +8,10 @@ import numpy as np
 import logging
 
 # my modules
-from financial_database import FinancialDatabase
-from config_database import my_database_name
+from database.financial_database import FinancialDatabase
+from database.config_database import my_database_name
 from dataframe_tools import merge_two_dataframes_as_of
-from finance_tools import realized_volatility_v2
+from financial_analysis.finance_tools import realized_volatility_v2
 
 
 # Logger
@@ -50,11 +50,12 @@ class Weight:
         else:
             raise ValueError('Index of signal_df needs to be a monotonically increasing DatetimeIndex.')
 
-    def get_weight_desc(self):
-        return 'no signal assigned' if self.signal_df is None else '{}x{} signal DataFrame assinged'.format(self.signal_df.shape[0], self.signal_df.shape[1])
+    @staticmethod
+    def get_weight_desc():
+        return ''
 
     def __repr__(self):
-        return "<Weight({})>".format(self.get_weight_desc())
+        return "<{}({})>".format(type(self).__name__, self.get_weight_desc())
 
 
 class _ProportionalWeight(Weight):
@@ -103,9 +104,6 @@ class _FinancialDatabaseDependentWeight(Weight):
     def financial_database_handler(self):
         # make financial_database_handler read-only
         return self._financial_database_handler
-
-    def __repr__(self):
-        return "<_FinancialDatabaseDependentWeight()>"
 
 
 class _PriceBasedWeight(_FinancialDatabaseDependentWeight):
@@ -159,9 +157,6 @@ class _PriceBasedWeight(_FinancialDatabaseDependentWeight):
             raise ValueError('price_obs_freq needs an int larger or equal to 1 or a string equal to %s.'
                              % ' or '.join(self._weekday_i_dict.keys()))
 
-    def __repr__(self):
-        return "<_PriceBasedWeight()>"
-
 
 class _PriceBasedProportionalWeight(_PriceBasedWeight, _ProportionalWeight):
     """Class definition of _PriceBasedProportionalWeight. Subclass of _PriceBasedWeight and
@@ -172,9 +167,6 @@ class _PriceBasedProportionalWeight(_PriceBasedWeight, _ProportionalWeight):
         _PriceBasedWeight.__init__(self, signal_df=signal_df, total_return=total_return, currency=currency,
                                    price_obs_freq=price_obs_freq)
         _ProportionalWeight.__init__(self, signal_df=signal_df, inversely=inversely)
-
-    def __repr__(self):
-        return "<_PriceBasedProportionalWeight()>"
 
 
 class EqualWeight(Weight):
@@ -202,9 +194,6 @@ class EqualWeight(Weight):
             weight_df[weight_df > 0.0] = weight_df[weight_df > 0.0].divide(positive_columns, axis=0)
             weight_df[weight_df < 0.0] = weight_df[weight_df < 0.0].divide(negative_columns, axis=0)
         return weight_df
-
-    def __repr__(self):
-        return "<EqualWeight({})>".format(self.get_weight_desc())
 
 
 class StaticWeight(Weight):
@@ -249,9 +238,6 @@ class StaticWeight(Weight):
             else:
                 return weight_from_user
 
-    def __repr__(self):
-        return "<StaticWeight({})>".format(self.get_weight_desc())
-
 
 class VolatilityWeight(_PriceBasedProportionalWeight):
     """Class definition of VolatilityWeight. Subclass of _PriceBasedProportionalWeight."""
@@ -271,6 +257,12 @@ class VolatilityWeight(_PriceBasedProportionalWeight):
         volatility = realized_volatility_v2(multivariate_price_df=price, vol_lag=self.volatility_observation_period)
         volatility.to_clipboard()
         return volatility
+
+    def get_weight_desc(self):
+        if self.inversely:
+            return 'weight is inversely proportional to realized volatility'
+        else:
+            return 'weight is proportional to realized volatility'
 
 
 # TODO add minimum variance and mean variance optimized weights

@@ -8,9 +8,9 @@ import numpy as np
 
 
 # my modules
-from financial_database import FinancialDatabase
-from config_database import my_database_name
-from finance_tools import rolling_average, realized_volatility_v2
+from database.financial_database import FinancialDatabase
+from database.config_database import my_database_name
+from financial_analysis.finance_tools import rolling_average, realized_volatility_v2
 from dataframe_tools import merge_two_dataframes_as_of
 
 
@@ -51,6 +51,10 @@ class Signal:
         # this method should be overridden when you want to change the signal
         return self.eligibility_df
 
+    @staticmethod
+    def get_desc():
+        return ''
+
     # ------------------------------------------------------------------------------------------------------------------
     # get and setter methods
     @property
@@ -65,7 +69,7 @@ class Signal:
             raise ValueError('Index of eligibility_df needs to be a DatetimeIndex that is monotonic increasing.')
 
     def __repr__(self):
-        return "<Signal()>"
+        return "<{}({})>".format(type(self).__name__, self.get_desc())
 
 
 class _RankSignal(Signal):
@@ -156,9 +160,6 @@ class _FinancialDatabaseDependentSignal(Signal):
         # make financial_database_handler read-only
         return self._financial_database_handler
 
-    def __repr__(self):
-        return "<_FinancialDatabaseDependentSignal()>"
-
 
 class _PriceBasedSignal(_FinancialDatabaseDependentSignal):
     """Class definition of _PriceBasedSignal. Subclass of _FinancialDatabaseDependentSignal."""
@@ -212,9 +213,6 @@ class _PriceBasedSignal(_FinancialDatabaseDependentSignal):
             raise ValueError('price_obs_freq needs an int larger or equal to 1 or a string equal to %s.'
                              % ' or '.join(self._weekday_i_dict.keys()))
 
-    def __repr__(self):
-        return "<_PriceBasedSignal()>"
-
 
 class _PriceBasedRankSignal(_PriceBasedSignal, _RankSignal):
     """Class definition of _PriceBasedRankSignal. Subclass of _PriceBasedSignal and _RankSignal."""
@@ -229,8 +227,11 @@ class _PriceBasedRankSignal(_PriceBasedSignal, _RankSignal):
                              eligibility_df=eligibility_df, rank_number=rank_number, rank_fraction=rank_fraction,
                              descending=descending, include=include)
 
-    def __repr__(self):
-        return "<_PriceBasedRankSignal()>"
+    def get_desc(self):
+        includes_excludes = 'includes' if self.include else 'excludes'
+        number_of_instruments = '{}'.format(self.rank_number) if self.rank_number else '{}% of the'.format(str(round(100 * self.rank_fraction, 2)))
+        high_low = 'highest' if self.descending else 'lowest'
+        return includes_excludes + ' ' + number_of_instruments + ' underlying(s) with the ' + high_low + ' values'
 
 
 class SimpleMovingAverageCrossSignal(_PriceBasedSignal):
@@ -242,17 +243,19 @@ class SimpleMovingAverageCrossSignal(_PriceBasedSignal):
                          total_return=total_return, currency=currency, price_obs_freq=price_obs_freq)
         self.sma_lag_1 = sma_lag_1
         self.sma_lag_2 = sma_lag_2
-        self._sma_lead = min(self.sma_lag_1, self.sma_lag_2)
-        self._sma_lag = max(self.sma_lag_1, self.sma_lag_2)
-        self._observation_buffer = self._sma_lag + 10
+        self._observation_buffer = max(self.sma_lag_1, self.sma_lag_2) + 10
 
     def _calculate_signal(self):
         price_data = self._get_price_df()
-        leading_sma_df = rolling_average(price_data, self._sma_lead)
-        lagging_sma_df = rolling_average(price_data, self._sma_lag)
+        lead, lag = self.get_lead_lag()
+        leading_sma_df = rolling_average(price_data, lead)
+        lagging_sma_df = rolling_average(price_data, lag)
         raw_signal_df = pd.DataFrame(index=price_data.index, columns=price_data.columns,
                                      data=np.where(leading_sma_df < lagging_sma_df, -1, 1))
         return raw_signal_df
+
+    def get_lead_lag(self):
+        return min(self.sma_lag_1, self.sma_lag_2), max(self.sma_lag_1, self.sma_lag_2)
 
     # ------------------------------------------------------------------------------------------------------------------
     # get and setter methods
@@ -280,8 +283,8 @@ class SimpleMovingAverageCrossSignal(_PriceBasedSignal):
         else:
             self._sma_lag_2 = sma_lag_2
 
-    def __repr__(self):
-        return "<SimpleMovingAverageCrossSignal()>"
+    def get_desc(self):
+        return 'bearish if SMA({}) < SMA({}), else bullish'.format(self.get_lead_lag()[0], self.get_lead_lag()[1])
 
 
 class VolatilityRankSignal(_PriceBasedRankSignal):
@@ -302,9 +305,6 @@ class VolatilityRankSignal(_PriceBasedRankSignal):
         price = self._get_price_df()
         volatility = realized_volatility_v2(multivariate_price_df=price, vol_lag=self.volatility_observation_period)
         return volatility
-
-    def __repr__(self):
-        return "<VolatilityRankSignal()>"
 
 
 class PerformanceRankSignal(_PriceBasedRankSignal):
@@ -336,6 +336,4 @@ class PerformanceRankSignal(_PriceBasedRankSignal):
         else:
             raise ValueError('performance_observation_period needs to be an integer larger or equal to 1.')
 
-    def __repr__(self):
-        return "<PerformanceRankSignal()>"
 

@@ -140,6 +140,12 @@ class InvestmentUniverse:
         self._eligibility_df = pd.DataFrame(columns=self._tickers, index=self.observation_calendar)
         self._filter_desc_list = []
 
+    def get_desc(self):
+        if len(self._filter_desc_list):
+            return '%s' % ', '.join(self._filter_desc_list)
+        else:
+            return 'no filter'
+
     def __repr__(self):
-        return '<InvestmentUniverse(filter=%s)>' % ', '.join(self._filter_desc_list)
+        return '<InvestmentUniverse(filter={})>'.format(self.get_desc())
 
