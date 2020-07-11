@@ -13,9 +13,9 @@ import logging
 from sqlalchemy import and_, or_
 
 # my modules
-from financial_database import FinancialDatabase
-from models_db import Underlying
-from config_database import my_database_name
+from database.financial_database import FinancialDatabase
+from database.models_db import Underlying
+from database.config_database import my_database_name
 
 # Logger
 logger = logging.getLogger(__name__)

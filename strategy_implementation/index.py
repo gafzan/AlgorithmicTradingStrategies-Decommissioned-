@@ -130,8 +130,8 @@ class Index(Basket):
                 obs_lag_desc = 'Observed over {} days'.format(self.volatility_observation_lag)
             index_desc_df.loc['Volatility observation lag:'] = obs_lag_desc
             index_desc_df.loc['Maximum risky weight:'] = str(round(100 * self.risky_weight_cap, 2)) + '%'
-        index_desc_df.loc['Weight smoothing (days):'] = self.weight_rebalance_lag
-        index_desc_df.loc['Weight observation lag (days):'] = self.weight_observation_lag
+        index_desc_df.loc['Weight smoothing (days):'] = str(self.weight_rebalance_lag)
+        index_desc_df.loc['Weight observation lag (days):'] = str(self.weight_observation_lag)
 
 
         return index_desc_df

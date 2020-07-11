@@ -10,9 +10,9 @@ import pandas as pd
 from datetime import date
 import logging
 
-from models_db import Underlying
-from financial_database import YahooFinanceFeeder, BloombergFeeder, FinancialDatabase
-from config_database import my_database_name, excel_ticker_folder, data_request_folder
+from database.models_db import Underlying
+from database.financial_database import YahooFinanceFeeder, BloombergFeeder, FinancialDatabase
+from database.config_database import my_database_name, excel_ticker_folder, data_request_folder
 from excel_tools import save_df, format_requested_data_workbook
 from general_tools import list_grouper, progression_bar
 

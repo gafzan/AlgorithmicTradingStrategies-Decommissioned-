@@ -13,12 +13,12 @@ from tkinter import filedialog, Tk
 import xlrd
 
 # my own modules
-from models_db import Base, Underlying, OpenPrice, HighPrice, LowPrice, ClosePrice, Volume, Dividend
+from database.models_db import Base, Underlying, OpenPrice, HighPrice, LowPrice, ClosePrice, Volume, Dividend
 from general_tools import capital_letter_no_blanks, list_grouper, extend_dict, reverse_dict, progression_bar
 from dataframe_tools import select_rows_from_dataframe_based_on_sub_calendar
-from config_database import my_database_name, excel_files_to_feed_database_folder
+from database.config_database import my_database_name, excel_files_to_feed_database_folder
 from excel_tools import load_df
-from bloomberg import BloombergConnection
+from database.bloomberg import BloombergConnection
 
 # Logger
 logger = logging.getLogger(__name__)
