@@ -109,6 +109,9 @@ class Index(Basket):
         else:
             return index_result
 
+    def get_index_desc_df(self):
+        pass
+
     def _get_eligibility_df(self):
         eligibility_df = self.investment_universe.get_eligibility_df(True)
         if self.observation_calendar is not None:
@@ -127,6 +130,9 @@ class Index(Basket):
         else:
             self.signal.eligibility_df = eligibility_df
             self.weight.signal_df = self.signal.get_signal()
+
+    def get_desc(self):
+        return super().get_desc() + ', VT = {}%'.format(round(100 * self.volatility_target, 2)) if self.volatility_target else ''
 
     # ------------------------------------------------------------------------------------------------------------------
     # getter and setter methods
