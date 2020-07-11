@@ -93,8 +93,7 @@ class Index(Basket):
         self.risky_weight_cap = risky_weight_cap
 
     def get_back_test(self, end_date: datetime = None, only_index: bool = False):
-        self._assign_signal_to_weight()
-        weight_df = self.weight.get_weights()
+        weight_df = self.get_weight()
         price_df = self.basket_prices(start_date=weight_df.index[0], end_date=end_date)
         daily_returns = price_df.pct_change()
         index_result = index_daily_rebalanced(daily_returns, weight_df, self.transaction_cost, self.index_fee,
@@ -115,6 +114,10 @@ class Index(Basket):
         if self.observation_calendar is not None:
             eligibility_df = merge_two_dataframes_as_of(pd.DataFrame(index=self.observation_calendar), eligibility_df)
         return eligibility_df
+
+    def get_weight(self):
+        self._assign_signal_to_weight()
+        return self.weight.get_weights()
 
     def _assign_signal_to_weight(self):
         eligibility_df = self._get_eligibility_df()
