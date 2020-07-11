@@ -417,6 +417,7 @@ def return_and_risk_analysis(underlying_price_df: pd.DataFrame, has_benchmark=Fa
                 )
     else:
         risk_return_table_df.index = ['Average 1Y return', 'Average 1Y volatility', 'Sharpe ratio', 'Maximum drawdown']
+    sheet_name_df_dict['Risk and return'] = risk_return_table_df
 
     # add the monthly return tables
     monthly_and_yearly_return_table = monthly_return_table(performance_df)
