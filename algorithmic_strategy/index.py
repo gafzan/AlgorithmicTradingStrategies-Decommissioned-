@@ -9,10 +9,10 @@ import logging
 # my modules
 from database.financial_database import FinancialDatabase
 from database.config_database import my_database_name
-from strategy_implementation.investment_universe import InvestmentUniverse
+from algorithmic_strategy.investment_universe import InvestmentUniverse
 from dataframe_tools import merge_two_dataframes_as_of
 from financial_analysis.finance_tools import index_daily_rebalanced
-from strategy_implementation import strategy_weight, strategy_signal
+from algorithmic_strategy import strategy_weight, strategy_signal
 
 # Logger
 logger = logging.getLogger(__name__)

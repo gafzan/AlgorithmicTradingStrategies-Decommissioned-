@@ -4,10 +4,10 @@ index_implementation.py
 from matplotlib import pyplot as plt
 
 # my modules
-from strategy_implementation.index import Index
-from strategy_implementation.strategy_weight import EqualWeight, VolatilityWeight
-from strategy_implementation.strategy_signal import VolatilityRankSignal
-from strategy_implementation.investment_universe import InvestmentUniverse
+from algorithmic_strategy.index import Index
+from algorithmic_strategy.strategy_weight import EqualWeight, VolatilityWeight
+from algorithmic_strategy.strategy_signal import VolatilityRankSignal
+from algorithmic_strategy.investment_universe import InvestmentUniverse
 
 from financial_analysis.finance_tools import return_and_risk_analysis
 from excel_tools import save_df, format_risk_return_analysis_workbook
