@@ -81,14 +81,6 @@ class HandleUnderlyingWindow(Tk):
         self.data_source_combo['values'] = action_data_source_dict[self.action_combo.get()]
         self.data_source_combo.current(0)
 
-    # def update_method_combo_box(self, event=None):
-    #     self.method_combo['values'] = action_method_dict[self.action_combo.get()]
-    #     self.method_combo.current(0)
-    #
-    # def update_data_source_combo_box(self, event=None):
-    #     self.data_source_combo['values'] = action_data_source_dict[self.action_combo.get()]
-    #     self.data_source_combo.current(0)
-
     def retrieve_tickers_click(self):
         if self.action_combo.get() == '':
             msg.showinfo('Warning!', 'Please select an action')
@@ -174,6 +166,7 @@ class _InputWindow(Toplevel):
                     return
                 else:
                     fin_db.delete_underlying(self.result)
+                logger.info('Done with deleting underlying(s) from database.')
             elif action == 'Download data':
                 DataRetrievalWindow(self, title=action, ticker_list=self.result)
             else:
