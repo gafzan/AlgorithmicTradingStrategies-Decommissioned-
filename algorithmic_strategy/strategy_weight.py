@@ -255,7 +255,6 @@ class VolatilityWeight(_PriceBasedProportionalWeight):
     def _get_dataframe(self):
         price = self._get_price_df()
         volatility = realized_volatility_v2(multivariate_price_df=price, vol_lag=self.volatility_observation_period)
-        volatility.to_clipboard()
         return volatility
 
     def get_weight_desc(self):

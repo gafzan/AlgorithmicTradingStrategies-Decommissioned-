@@ -91,8 +91,8 @@ class _RankSignal(Signal):
         if com.count_not_none(self.rank_number, self.rank_fraction) == 0:
             raise ValueError('Need to secify rank_number or rank_fraction before performing ranking.')
         # ignore instruments that are not eligible
-        eligible_df = merge_two_dataframes_as_of(pd.DataFrame(index=data_to_be_ranked.index), self.eligibility_df)
-        data_to_be_ranked_eligible = data_to_be_ranked * eligible_df.values
+        data_to_be_ranked = merge_two_dataframes_as_of(pd.DataFrame(index=self.eligibility_df.index), data_to_be_ranked)
+        data_to_be_ranked_eligible = data_to_be_ranked * self.eligibility_df.values
         ranked_df = data_to_be_ranked_eligible.rank(axis='columns', method='first', ascending=not self.descending,
                                                     numeric_only=True)
         if self.rank_fraction is None:
@@ -105,6 +105,7 @@ class _RankSignal(Signal):
         signal_df = pd.DataFrame(index=data_to_be_ranked_eligible.index, columns=data_to_be_ranked_eligible.columns,
                                  data=signal_array)
         signal_df *= 1  # convert True to 1 and False to 0
+        signal_df.replace(0, np.nan, inplace=True)
         return signal_df
 
     def _calculate_signal(self):
@@ -291,7 +292,7 @@ class VolatilityRankSignal(_PriceBasedRankSignal):
     """Class definition of VolatilityRankSignal. Subclass of _PriceBasedRankSignal."""
     def __init__(self, volatility_observation_period: {int, list}, rank_number: int = None, rank_fraction: float = None,
                  descending: bool = False, include: bool = True, tickers: {str, list}=None, observation_calendar: pd.DatetimeIndex = None,
-                 eligibility_df: pd.DataFrame = None, total_return: bool = None, currency: str = None, price_obs_freq: {str, int} = None):
+                 eligibility_df: pd.DataFrame = None, total_return: bool = True, currency: str = None, price_obs_freq: {str, int} = None):
         super().__init__(tickers=tickers, observation_calendar=observation_calendar, eligibility_df=eligibility_df,
                          total_return=total_return, currency=currency, price_obs_freq=price_obs_freq,
                          rank_number=rank_number, rank_fraction=rank_fraction, descending=descending, include=include)
@@ -311,7 +312,7 @@ class PerformanceRankSignal(_PriceBasedRankSignal):
     """Class definition of VolatilityRankSignal. Subclass of _PriceBasedRankSignal."""
     def __init__(self, performance_observation_period: int, rank_number: int = None, rank_fraction: float = None,
                  descending: bool = True, include: bool = True, tickers: {str, list}=None, observation_calendar: pd.DatetimeIndex = None,
-                 eligibility_df: pd.DataFrame = None, total_return: bool = None, currency: str = None, price_obs_freq: {str, int}=None):
+                 eligibility_df: pd.DataFrame = None, total_return: bool = False, currency: str = None, price_obs_freq: {str, int}=None):
         super().__init__(tickers=tickers, observation_calendar=observation_calendar, eligibility_df=eligibility_df,
                          total_return=total_return, currency=currency, price_obs_freq=price_obs_freq,
                          rank_number=rank_number, rank_fraction=rank_fraction, descending=descending, include=include)

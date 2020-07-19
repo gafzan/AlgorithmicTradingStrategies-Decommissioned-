@@ -132,8 +132,6 @@ class Index(Basket):
             index_desc_df.loc['Maximum risky weight:'] = str(round(100 * self.risky_weight_cap, 2)) + '%'
         index_desc_df.loc['Weight smoothing (days):'] = str(self.weight_rebalance_lag)
         index_desc_df.loc['Weight observation lag (days):'] = str(self.weight_observation_lag)
-
-
         return index_desc_df
 
     def _get_eligibility_df(self):
@@ -143,17 +141,16 @@ class Index(Basket):
         return eligibility_df
 
     def get_weight(self):
-        self._assign_signal_to_weight()
+        self.weight.signal_df = self.get_signal()
         return self.weight.get_weights()
 
-    def _assign_signal_to_weight(self):
+    def get_signal(self):
         eligibility_df = self._get_eligibility_df()
         if self.signal is None:
-            signal = strategy_signal.Signal(eligibility_df=eligibility_df)  # default signal is just the eligibility DataFrame
-            self.weight.signal_df = signal.get_signal()
+            return strategy_signal.Signal(eligibility_df=eligibility_df).get_signal()
         else:
             self.signal.eligibility_df = eligibility_df
-            self.weight.signal_df = self.signal.get_signal()
+            return self.signal.get_signal()
 
     def get_desc(self):
         return super().get_desc() + ', VT = {}%'.format(round(100 * self.volatility_target, 2)) if self.volatility_target else ''

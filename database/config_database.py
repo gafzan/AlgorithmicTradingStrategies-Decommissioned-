@@ -28,3 +28,4 @@ create_directory(excel_files_to_feed_database_folder)
 back_test_folder = base_folder + r'\excel_data' + '\\back_tests'
 create_directory(back_test_folder)
 my_database_name = r'sqlite:///' + base_folder + '\\database\database_files\\financial_database_v1.db'
+create_directory(base_folder + r'\\database\database_files')

@@ -189,9 +189,12 @@ class BloombergConnection:
         if end_date is not None:
             dividend_df = dividend_df[dividend_df['ex_date'] <= end_date]
 
+        # for each ticker sum dividend payments on same ex-dates
+        dividend_df = dividend_df.groupby(by=['ticker', 'ex_date'])['dividend_amount'].sum()
+        dividend_df.reset_index(inplace=True)
+
         if do_pivot:
-            dividend_df = pd.pivot_table(dividend_df, values='dividend_amount', index='ex_date',
-                                             columns='ticker')
+            dividend_df = pd.pivot_table(dividend_df, values='dividend_amount', index='ex_date', columns='ticker')
             # add back ticker(s) that does not pay any dividends
             missing_tickers = list(set(tickers).difference(list(dividend_df)))
             dividend_df = dividend_df.reindex(columns=list(dividend_df) + missing_tickers)
@@ -283,7 +286,11 @@ class BloombergConnection:
             tickers_in_index = obs_date_ticker_list_dict[obs_date]
             ticker_inclusivity = [1 if ticker in tickers_in_index else 0 for ticker in tickers]
             result_df.loc[obs_date] = ticker_inclusivity
-        return result_df
+
+        # remove the first rows where all columns are zero
+        cum_num_tickers = result_df.sum(axis=1).cumsum()
+        eligible_index = cum_num_tickers[cum_num_tickers > 0].index
+        return result_df.loc[eligible_index, :]
 
     def get_futures_chain(self, generic_futures_index_ticker: str):
         """

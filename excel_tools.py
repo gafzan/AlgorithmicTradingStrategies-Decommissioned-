@@ -63,7 +63,7 @@ def save_df(df_list: {list, pd.DataFrame}, workbook_name: str = None, folder_pat
             for i in range(len(df_list)):
                 if len(sheet_name_list[i]) > 31:
                     logger.warning(f"'{sheet_name_list[i]}' is too long (needs to be less than 31 characters). "
-                                   f"\n'{sheet_name_list[i]}' will be shortened to {sheet_name_list[i][:31]}")
+                                   f"\n'{sheet_name_list[i]}' will be shortened to '{sheet_name_list[i][:31]}'.")
                 df_list[i].to_excel(writer, sheet_name=sheet_name_list[i][:31])  # write the DataFrame into excel
         else:
             raise ValueError(r'"df_list" and "sheet_name_list" are not of the same length')
@@ -126,6 +126,13 @@ def load_df(workbook_name: str = None, folder_path: str = None, full_path: str =
     if first_column_index:
         data.set_index(list(data)[0], inplace=True, drop=True)
     return data
+
+
+def load_df_from_chosen_excel_file(sheet_name='Sheet1', first_column_index: bool = True):
+    # chose excel file to format
+    Tk().withdraw()
+    excel_file_path = filedialog.askopenfile(initialdir=base_folder, title='Select excel file').name
+    return load_df(full_path=excel_file_path, sheet_name=sheet_name, first_column_index=first_column_index)
 
 
 def _check_save_load_input(workbook_name: str = None, folder_path: str = None, full_path: str = None)-> None:
@@ -305,12 +312,8 @@ def basic_formatting(sheet, col, cell_formatting='0.00%', last_column_bold=False
 
 
 def format_excel_workbook_index_time_series():
-    # chose excel file to format
-    Tk().withdraw()
-    excel_file_path = filedialog.askopenfile(initialdir=base_folder, title='Select excel file to format').name
-
     # get the underlying data
-    df = load_df(full_path=excel_file_path, sheet_name='result')
+    df = load_df_from_chosen_excel_file()
     sheet_name_df_dict = return_and_risk_analysis(df, print_results=True, normalize=False)
 
     # save the result

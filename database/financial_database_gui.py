@@ -125,7 +125,7 @@ class _InputWindow(Toplevel):
             if data_source == data_source_list[0]:
                 fin_db = YahooFinanceFeeder(my_database_name)
             elif data_source == data_source_list[1]:
-                fin_db = BloombergFeeder(my_database_name)
+                fin_db = BloombergFeeder(my_database_name, bbg_echo=False)
             else:
                 fin_db = FinancialDatabase(my_database_name)
 

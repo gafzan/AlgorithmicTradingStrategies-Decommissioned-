@@ -4,31 +4,7 @@ import matplotlib.pyplot as plt
 import math
 from matplotlib import cm
 import seaborn as sns
-from dataframe_tools import merge_two_dataframes_as_of  # TODO can you do this???
-
-
-# TODO check where this one is used and replace it with version 2
-def realized_volatility(price_df: pd.DataFrame, *vol_lag, annualized_factor: int = 252, allowed_number_na: int = 5) \
-        -> pd.DataFrame:
-    """Assumes price_df is a DataFrame filled with daily prices as values, tickers as column names and observation dates
-    as index. Assumes that measurement_interval and annualized_factor is int and data_availability_threshold is a float.
-    Returns a DataFrame with the rolling annualized realized volatility."""
-    if min(vol_lag) < 2:
-        raise ValueError("vol_lag needs to be an 'int' larger or equal to 2.")
-    max_volatility_df = None
-    for lag in vol_lag:
-        return_df = price_df.pct_change(fill_method=None)
-        volatility_sub_df = return_df.rolling(window=lag, min_periods=allowed_number_na).std() \
-                            * (annualized_factor ** 0.5)
-        if max_volatility_df is None:
-            max_volatility_df = volatility_sub_df
-        else:
-            max_volatility_df = pd.concat([max_volatility_df, volatility_sub_df]).max(level=0, skipna=False)
-    # before price starts publishing, value should be nan regardless of data_availability_threshold
-    adjustment_df = price_df.pct_change().fillna(method='ffill').rolling(window=max(vol_lag)).mean().isnull()
-    adjustment_df = np.where(adjustment_df, np.nan, 1)
-    max_volatility_df *= adjustment_df
-    return max_volatility_df
+from dataframe_tools import merge_two_dataframes_as_of
 
 
 def relative_sma(price_df: pd.DataFrame, sma_lag: int, max_number_of_na: int = 5) -> pd.DataFrame:
@@ -240,6 +216,7 @@ def index_daily_rebalanced(multivariate_daily_returns: pd.DataFrame, weights: pd
                            weight_observation_lag: int = 1, initial_value: float = 100, volatility_target: float = None,
                            volatility_lag: {int, list, tuple}=60, risky_weight_cap: float=1):
     # calculate the gross return of the index
+    multivariate_daily_returns.iloc[1:, :].fillna(0, inplace=True)
     num_instruments = multivariate_daily_returns.shape[1]
     index_result = merge_two_dataframes_as_of(multivariate_daily_returns, weights, '_WEIGHT')
     index_result.iloc[:, num_instruments:] = index_result.iloc[:, num_instruments:].rolling(window=weight_smoothing_lag, min_periods=1).mean()  # smooth the weights to reduce turnover

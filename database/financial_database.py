@@ -195,7 +195,7 @@ class FinancialDatabase:
         observation date, 2) latest observation date with value, 3) oldest observation date and 4) first ex-dividend
         date (if any)."""
 
-        logger.info('Updating oldest and latest observation date and first e-dividend date for {} ticker(s).'.format(len(tickers)))
+        logger.info('Updating oldest and latest observation date and first xe-dividend date for {} ticker(s).'.format(len(tickers)))
         underlying_id_list = list(self.get_ticker_underlying_attribute_dict(tickers, Underlying.id).values())
         self._update_dividend_info(underlying_id_list)
         self._update_obs_date(underlying_id_list)
