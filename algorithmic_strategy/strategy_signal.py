@@ -77,14 +77,19 @@ class _RankSignal(Signal):
     Subclass of Signal."""
 
     def __init__(self, tickers: {str, list}, observation_calendar: pd.DatetimeIndex, eligibility_df: pd.DataFrame,
-                 rank_number: int, rank_fraction: float, descending: bool, include: bool):
+                 rank_number: int, rank_fraction: float, descending: bool, include: bool,
+                 winsorizing_fraction: float, winsorizing_number: int):
         Signal.__init__(self, tickers=tickers, observation_calendar=observation_calendar, eligibility_df=eligibility_df)
         if com.count_not_none(rank_number, rank_fraction) == 2:
             raise ValueError('Of the two parameters: rank_number and rank_fraction only one can be specified.')
+        if com.count_not_none(winsorizing_fraction, winsorizing_number) == 2:
+            raise ValueError('Of the two parameters: winsorizing_fraction and winsorizing_number only one can be specified.')
         self.rank_number = rank_number
         self.rank_fraction = rank_fraction
         self.descending = descending
         self.include = include
+        self.winsorizing_fraction = winsorizing_fraction
+        self.winsorizing_number = winsorizing_number
 
     def _perform_ranking_on_dataframe(self, data_to_be_ranked: pd.DataFrame) -> pd.DataFrame:
         """Ranks data in a DataFrame in either descending or ascending order"""
@@ -95,6 +100,10 @@ class _RankSignal(Signal):
         data_to_be_ranked_eligible = data_to_be_ranked * self.eligibility_df.values
         ranked_df = data_to_be_ranked_eligible.rank(axis='columns', method='first', ascending=not self.descending,
                                                     numeric_only=True)
+        print(ranked_df)
+        ranked_df = self._winsorize_data(ranked_df)
+        print('Windsorizing...')
+        print(ranked_df)
         if self.rank_fraction is None:
             signal_array = np.where(ranked_df <= self.rank_number, self.include, not self.include)
         else:
@@ -103,10 +112,22 @@ class _RankSignal(Signal):
             signal_array = np.where(ranked_df.le(rank_number_s, axis=0), self.include,
                                     not self.include)  # True if df is Less or Equal to series
         signal_df = pd.DataFrame(index=data_to_be_ranked_eligible.index, columns=data_to_be_ranked_eligible.columns,
-                                 data=signal_array)
+                                 data=signal_array * ~ranked_df.isna().values)
         signal_df *= 1  # convert True to 1 and False to 0
         signal_df.replace(0, np.nan, inplace=True)
         return signal_df
+
+    def _winsorize_data(self, ranked_df: pd.DataFrame):
+        if self.winsorizing_fraction:
+            count_non_nan_s = ranked_df.count(axis=1)
+            rank_number_s = round(count_non_nan_s * self.winsorizing_fraction)
+            winsorizing_array = np.where(ranked_df.le(rank_number_s, axis=0), np.nan, 1)
+        elif self.winsorizing_number:
+            winsorizing_array = np.where(ranked_df <= self.winsorizing_number, np.nan, 1)
+        else:
+            return ranked_df
+        ranked_df *= winsorizing_array
+        return ranked_df.rank(axis='columns', method='first', ascending=True, numeric_only=True)
 
     def _calculate_signal(self):
         data = self._get_dataframe_to_be_ranked()
@@ -220,13 +241,15 @@ class _PriceBasedRankSignal(_PriceBasedSignal, _RankSignal):
 
     def __init__(self, tickers: {str, list}, observation_calendar: pd.DatetimeIndex,
                  eligibility_df: pd.DataFrame, total_return: bool, currency: str, price_obs_freq: {str, int},
-                 rank_number: int, rank_fraction: float, descending: bool, include: bool):
+                 rank_number: int, rank_fraction: float, descending: bool, include: bool, winsorizing_number: int,
+                 winsorizing_fraction: float):
         _PriceBasedSignal.__init__(self, tickers=tickers, observation_calendar=observation_calendar,
                                    eligibility_df=eligibility_df, total_return=total_return, currency=currency,
                                    price_obs_freq=price_obs_freq)
         _RankSignal.__init__(self, tickers=tickers, observation_calendar=observation_calendar,
                              eligibility_df=eligibility_df, rank_number=rank_number, rank_fraction=rank_fraction,
-                             descending=descending, include=include)
+                             descending=descending, include=include, winsorizing_number=winsorizing_number,
+                             winsorizing_fraction=winsorizing_fraction)
 
     def get_desc(self):
         includes_excludes = 'includes' if self.include else 'excludes'
@@ -292,10 +315,12 @@ class VolatilityRankSignal(_PriceBasedRankSignal):
     """Class definition of VolatilityRankSignal. Subclass of _PriceBasedRankSignal."""
     def __init__(self, volatility_observation_period: {int, list}, rank_number: int = None, rank_fraction: float = None,
                  descending: bool = False, include: bool = True, tickers: {str, list}=None, observation_calendar: pd.DatetimeIndex = None,
-                 eligibility_df: pd.DataFrame = None, total_return: bool = True, currency: str = None, price_obs_freq: {str, int} = None):
+                 eligibility_df: pd.DataFrame = None, total_return: bool = True, currency: str = None, price_obs_freq: {str, int} = None,
+                 winsorizing_number: int = None, winsorizing_fraction: float = None):
         super().__init__(tickers=tickers, observation_calendar=observation_calendar, eligibility_df=eligibility_df,
                          total_return=total_return, currency=currency, price_obs_freq=price_obs_freq,
-                         rank_number=rank_number, rank_fraction=rank_fraction, descending=descending, include=include)
+                         rank_number=rank_number, rank_fraction=rank_fraction, descending=descending, include=include,
+                         winsorizing_number=winsorizing_number, winsorizing_fraction=winsorizing_fraction)
         self.volatility_observation_period = volatility_observation_period
         if isinstance(volatility_observation_period, int):
             self._observation_buffer = volatility_observation_period + 10
@@ -312,10 +337,12 @@ class PerformanceRankSignal(_PriceBasedRankSignal):
     """Class definition of VolatilityRankSignal. Subclass of _PriceBasedRankSignal."""
     def __init__(self, performance_observation_period: int, rank_number: int = None, rank_fraction: float = None,
                  descending: bool = True, include: bool = True, tickers: {str, list}=None, observation_calendar: pd.DatetimeIndex = None,
-                 eligibility_df: pd.DataFrame = None, total_return: bool = False, currency: str = None, price_obs_freq: {str, int}=None):
+                 eligibility_df: pd.DataFrame = None, total_return: bool = False, currency: str = None, price_obs_freq: {str, int}=None,
+                 winsorizing_number: int = None, winsorizing_fraction: float = None):
         super().__init__(tickers=tickers, observation_calendar=observation_calendar, eligibility_df=eligibility_df,
                          total_return=total_return, currency=currency, price_obs_freq=price_obs_freq,
-                         rank_number=rank_number, rank_fraction=rank_fraction, descending=descending, include=include)
+                         rank_number=rank_number, rank_fraction=rank_fraction, descending=descending, include=include,
+                         winsorizing_number=winsorizing_number, winsorizing_fraction=winsorizing_fraction)
         self.performance_observation_period = performance_observation_period
         self._observation_buffer = performance_observation_period + 10
 
