@@ -16,38 +16,57 @@ def relative_sma(price_df: pd.DataFrame, sma_lag: int, max_number_of_na: int = 5
     return relative_sma_df
 
 
-def realized_volatility_v2(multivariate_price_df: pd.DataFrame = None, multivariate_return_df: pd.DataFrame = None,
-                           vol_lag: {int, list, tuple}=60, annualized_factor: int = 252, allowed_number_na: int = 5) \
-        -> pd.DataFrame:
-
-    # make sure vol_lag is always iterable
-    if isinstance(vol_lag, int):
-        vol_lag = [vol_lag]
-
-    # check the values of the volatility lag
-    if min(vol_lag) < 2:
-        raise ValueError("vol_lag needs to be an int or a list of ints larger or equal to 2.")
+def realized_volatility(multivariate_price_df: pd.DataFrame = None, multivariate_return_df: pd.DataFrame = None,
+                        vol_lag: {int, list, tuple}=60, annualized_factor: int = 252, allowed_number_na: int = 5,
+                        aggregate_func_when_multiple_lags: str = 'max') -> pd.DataFrame:
+    """
+    Calculates the realized volatility of each column.
+    :param multivariate_price_df:
+    :param multivariate_return_df:
+    :param vol_lag:
+    :param annualized_factor:
+    :param allowed_number_na:
+    :param aggregate_func_when_multiple_lags:
+    :return:
+    """
     if multivariate_price_df is None and multivariate_return_df is None:
         raise ValueError('Need to specify multivariate_return_df or multivariate_price_df.')
-    elif multivariate_return_df is None:
-        multivariate_return_df = multivariate_price_df.pct_change(fill_method=None)
     elif multivariate_return_df is not None and multivariate_price_df is not None:
         raise ValueError('Can only specify one of multivariate_return_df and multivariate_price_df.')
 
-    max_volatility_df = None
-    for lag in vol_lag:
-        volatility_sub_df = multivariate_return_df.rolling(window=lag, min_periods=allowed_number_na).std() \
-                            * (annualized_factor ** 0.5)
-        if max_volatility_df is None:
-            max_volatility_df = volatility_sub_df
-        else:
-            max_volatility_df = pd.concat([max_volatility_df, volatility_sub_df]).max(level=0, skipna=False)
+    return _rolling_calc(multivariate_df=multivariate_price_df if multivariate_return_df is None else multivariate_return_df, lag_parameter=vol_lag,
+                         convert_to_returns=multivariate_return_df is None,
+                         function='realized_volatility', aggregate_method=aggregate_func_when_multiple_lags,
+                         max_number_of_na=allowed_number_na, annualized_factor=annualized_factor,
+                         minimum_allowed_lag=2)
 
-    # before price starts publishing, value should be nan regardless of data_availability_threshold
-    adjustment_df = multivariate_return_df.fillna(method='ffill').rolling(window=max(vol_lag)).mean().isnull()
-    adjustment_df = np.where(adjustment_df, np.nan, 1)
-    max_volatility_df *= adjustment_df
-    return max_volatility_df
+
+def beta(multivariate_price_df: pd.DataFrame = None, multivariate_return_df: pd.DataFrame = None, beta_price_df: pd.DataFrame = None,
+         beta_lag: {int, list, tuple}=252, return_lag: int = 1, allowed_number_na: int = 5,
+         aggregate_func_when_multiple_lags: str = 'avg') -> pd.DataFrame:
+    """
+    Calculates the beta of each column with respect to a given price DataFrame.
+    :param multivariate_price_df:
+    :param multivariate_return_df:
+    :param beta_price_df:
+    :param beta_lag:
+    :param return_lag:
+    :param allowed_number_na:
+    :param aggregate_func_when_multiple_lags:
+    :return:
+    """
+    if multivariate_price_df is None and multivariate_return_df is None:
+        raise ValueError('Need to specify multivariate_return_df or multivariate_price_df.')
+    elif multivariate_return_df is not None and multivariate_price_df is not None:
+        raise ValueError('Can only specify one of multivariate_return_df and multivariate_price_df.')
+    return _rolling_calc(
+        multivariate_df=multivariate_price_df if multivariate_return_df is None else multivariate_return_df,
+        price_data_for_beta_calc_df=beta_price_df,
+        lag_parameter=beta_lag, return_lag=return_lag,
+        convert_to_returns=multivariate_return_df is None,
+        function='beta', aggregate_method=aggregate_func_when_multiple_lags,
+        max_number_of_na=allowed_number_na,
+        minimum_allowed_lag=2)
 
 
 def rolling_average(data_df: pd.DataFrame, avg_lag: int, max_number_of_na: {int, None}=5) -> pd.DataFrame:
@@ -59,27 +78,105 @@ def rolling_average(data_df: pd.DataFrame, avg_lag: int, max_number_of_na: {int,
     :param max_number_of_na: int (default None i.e. all nan are rolled forward)
     :return: pandas.DataFrame
     """
-    if avg_lag < 1:
-        raise ValueError("avg_lag needs to be an 'int' larger or equal to 1")
-    original_index = data_df.index
-    rolling_avg_df = pd.DataFrame(index=original_index)
+    return _rolling_calc(data_df, avg_lag, False, 'average', max_number_of_na=max_number_of_na, minimum_allowed_lag=1)
 
-    # for each column, remove nan and calculate a rolling moving average
-    for col_name in list(data_df):
-        column = data_df[col_name].dropna().rolling(window=avg_lag).mean()
-        rolling_avg_df = rolling_avg_df.join(column)
 
-    # roll forward when value is nan
-    rolling_avg_df.fillna(method='ffill', inplace=True)
+def _rolling_calc(multivariate_df: pd.DataFrame, lag_parameter: {int, tuple, list}, convert_to_returns: bool, function: str,
+                  aggregate_method: str = None, max_number_of_na: int = 5, return_lag: int = 1,
+                  annualized_factor: int = 252, price_data_for_beta_calc_df: pd.DataFrame = None, minimum_allowed_lag: int = 2):
+    lag_parameter = _parameter_input_check(lag_parameter, minimum_allowed_lag)
+    if multivariate_df.shape[0] < max(lag_parameter) + convert_to_returns + return_lag - 1:
+        raise ValueError('multivariate_df needs to have at least {} rows.'.format(max(lag_parameter) + convert_to_returns + return_lag - 1))
+    col_list = multivariate_df.columns[multivariate_df.iloc[1:, :].isna().any()].tolist()
+    col_with_only_values = multivariate_df.columns[~multivariate_df.iloc[1:, :].isna().any()].tolist()
+    col_list.append(col_with_only_values)
+    result_df = None
+    for lag in lag_parameter:
+        result_sub_df = pd.DataFrame(index=multivariate_df.index)
+        for col_name in col_list:
+            if not isinstance(col_name, list):
+                col_name = [col_name]
+                df_clean = multivariate_df.loc[:, col_name]
+                df_clean.iloc[1:, :] = df_clean.iloc[1:, :].dropna()
+            else:
+                df_clean = multivariate_df.loc[:, col_name]
+            if convert_to_returns:
+                df_clean = df_clean.pct_change(return_lag)
+            # here is where the main calculation is done
+            df_clean = _function_calc(df_clean, function, lag=lag, return_lag=return_lag,
+                                      price_data_for_beta_calc_df=price_data_for_beta_calc_df,
+                                      annualized_factor=annualized_factor)
+            result_sub_df = result_sub_df.join(df_clean)
+        result_sub_df = result_sub_df[list(multivariate_df)]
+        if result_df is None:
+            result_df = result_sub_df
+        elif aggregate_method.lower() in ['max', 'maximum']:
+            result_df = pd.concat([result_df, result_sub_df]).max(level=0, skipna=False)
+        elif aggregate_method.lower() in ['mean', 'average', 'avg']:
+            result_df = pd.concat([result_df, result_sub_df]).mean(level=0, skipna=False)
+        else:
+            if aggregate_method is None:
+                raise ValueError("Need to specify aggregate_method when specifying a list of lag parameters.")
+            else:
+                raise ValueError("'{}' is not a recognized aggregation function.".format(aggregate_method.lower()))
 
+    result_df.fillna(method='ffill', inplace=True)
+    result_df = _set_nan_for_missing_data(multivariate_df, result_df, max_number_of_na=max_number_of_na)
+    return result_df
+
+
+def _function_calc(df: pd.DataFrame, func_name: str, **kwargs):
+    if func_name == 'realized_volatility':
+        df_clean = df.rolling(window=kwargs['lag']).std() * (kwargs['annualized_factor'] ** 0.5)
+    elif func_name == 'average':
+        df_clean = df.rolling(window=kwargs['lag']).mean()
+    elif func_name == 'beta':
+        if kwargs['price_data_for_beta_calc_df'] is None:
+            raise ValueError('Need to specify data_for_beta_calc_df when calculating betas.')
+        else:
+            df_clean = merge_two_dataframes_as_of(df, kwargs['price_data_for_beta_calc_df'], 'used_for_beta_calc')
+        df_clean.iloc[:, -1] = df_clean.iloc[:, -1].pct_change(kwargs['return_lag'])
+        covariance_df = df_clean.rolling(window=kwargs['lag']).cov(df_clean.iloc[:, -1])
+        variance_df = df_clean.iloc[:, -1].rolling(window=kwargs['lag']).var()
+        df_clean = covariance_df.divide(variance_df, axis='index')
+        df_clean = df_clean.iloc[:, :-1]  # ignore the column furthest to the right
+    else:
+        raise ValueError("'{}' is not a recognized function.".format(func_name.lower()))
+    return df_clean
+
+
+def _parameter_input_check(param: {int, tuple, list}, minimum_value: int):
+    """
+    Checks and converts the parameter to a list if necessary.
+    :param param: int, list
+    :param minimum_value: int
+    :return: None
+    """
+    # convert to list if applicable
+    try:
+        param[0]
+    except TypeError:
+        param = [param]
+    # check value
+    if min(param) < minimum_value:
+        raise ValueError('Parameter value needs to be greater or equal to {}.'.format(minimum_value))
+    return param
+
+
+def _set_nan_for_missing_data(original_multivariate_df: pd.DataFrame, calculated_value_df: pd.DataFrame,
+                              max_number_of_na: int)->pd.DataFrame:
+    """
+    After calculating e.g. Volatility, this script sets the values to NaN if the original DataFrame had a number of
+    consecutive rows of NaN above a threshold.
+    :param original_multivariate_df: DataFrame
+    :param calculated_value_df: DataFrame
+    :param max_number_of_na: int
+    :return: DataFrame
+    """
     # set value to nan if the number of consecutive nan exceeds max_number_of_na
-    if max_number_of_na:
-        adjustment_df = data_df.rolling(window=max_number_of_na + 1, min_periods=1).mean()
-        eligibility_df = pd.DataFrame(data=np.where(adjustment_df.isna(), np.nan, 1),
-                                      index=rolling_avg_df.index,
-                                      columns=rolling_avg_df.columns)
-        rolling_avg_df = rolling_avg_df * eligibility_df
-    return rolling_avg_df
+    adjustment_df = original_multivariate_df.rolling(window=max_number_of_na + 1, min_periods=1).mean()
+    eligibility_df = np.where(adjustment_df.isna(), np.nan, 1)
+    return calculated_value_df * eligibility_df
 
 
 def rolling_drawdown(price_df: pd.DataFrame, look_back_period: int = None) -> pd.DataFrame:
@@ -214,13 +311,29 @@ def index_calculation(price_df: pd.DataFrame, weight_df: pd.DataFrame, transacti
 def index_daily_rebalanced(multivariate_daily_returns: pd.DataFrame, weights: pd.DataFrame,
                            transaction_costs: float = 0, rolling_fee_pa: float = 0, weight_smoothing_lag: int = 1,
                            weight_observation_lag: int = 1, initial_value: float = 100, volatility_target: float = None,
-                           volatility_lag: {int, list, tuple}=60, risky_weight_cap: float=1):
+                           volatility_lag: {int, list, tuple}=60, risky_weight_cap: float = 1,
+                           market_price_df: pd.DataFrame = None, beta_lag: {int, list, tuple}=252,
+                           beta_hedge_carry_cost_pa: float = 0.0, beta_return_lag: int = 1):
     # calculate the gross return of the index
     multivariate_daily_returns.iloc[1:, :].fillna(0, inplace=True)
     num_instruments = multivariate_daily_returns.shape[1]
     index_result = merge_two_dataframes_as_of(multivariate_daily_returns, weights, '_WEIGHT')
     index_result.iloc[:, num_instruments:] = index_result.iloc[:, num_instruments:].rolling(window=weight_smoothing_lag, min_periods=1).mean()  # smooth the weights to reduce turnover
     index_result[[col_name + '_WEIGHTED_RETURN' for col_name in list(multivariate_daily_returns)]] = index_result.iloc[:, :num_instruments] * index_result.iloc[:, num_instruments:].shift(weight_observation_lag).values
+
+    # make the index 'market-neutral' by adding a short position where the allocation depends on the realized beta
+    if market_price_df is not None:
+
+        index_result = _add_beta_hedge(index_result=index_result, multivariate_daily_returns=multivariate_daily_returns,
+                                       market_price_df=market_price_df, beta_lag=beta_lag,
+                                       beta_return_lag=beta_return_lag, num_instruments=num_instruments,
+                                       weight_observation_lag=weight_observation_lag)
+        market_neutral = True
+        num_instruments += 1
+    else:
+        market_neutral = False
+
+        # index_result = _add_beta_hedge(index_result)
     index_result['GROSS_INDEX_RETURN'] = index_result.iloc[:, 2 * num_instruments:].sum(axis=1, skipna=False)
 
     # add volatility target mechanism if applicable
@@ -233,22 +346,67 @@ def index_daily_rebalanced(multivariate_daily_returns: pd.DataFrame, weights: pd
     index_result.iloc[start_of_index_i, -1] = initial_value
 
     # adjust index for transaction costs and index fees if any
-    if transaction_costs != 0 or rolling_fee_pa != 0:
+    if transaction_costs != 0 or rolling_fee_pa != 0 or market_neutral * beta_hedge_carry_cost_pa != 0:
         # add a column with the net index return
-        index_result = _add_net_index_return(index_result, transaction_costs, rolling_fee_pa, num_instruments)
+        index_result = _add_net_index_return(index_result=index_result, transaction_costs=transaction_costs,
+                                             rolling_fee_pa=rolling_fee_pa, number_of_instruments=num_instruments,
+                                             beta_carry_cost=market_neutral * beta_hedge_carry_cost_pa,
+                                             weight_observation_lag=weight_observation_lag)
+
         # calculate the net index
         index_result['NET_INDEX'] = initial_value * (1 + index_result['NET_INDEX_RETURN']).cumprod()
         index_result.iloc[start_of_index_i, -1] = initial_value
     return index_result
 
 
+def _add_beta_hedge(index_result: pd.DataFrame, multivariate_daily_returns: pd.DataFrame, market_price_df: pd.DataFrame,
+                    beta_lag: {int, list}, beta_return_lag: int, num_instruments: int, weight_observation_lag: int):
+    # add the daily returns of the market instrument
+    index_result = merge_two_dataframes_as_of(index_result, market_price_df.pct_change(), left_suffix='BETA_INSTRUMENT')
+
+    # calculate the weight of the short position
+    if beta_return_lag > 1:
+        # convert the daily returns back to performance data
+        multivariate_price_df = multivariate_daily_returns.shift(-1)  # shift the daily returns backwards
+        multivariate_price_df[~multivariate_price_df.isnull()] = 1  # where there is a shifted return set value to 1
+        multivariate_price_df.iloc[-1, :] = 1  # last rows should be 1 since the shifted value is always nan
+        multivariate_price_df += multivariate_daily_returns.fillna(0)  # 1 + daily return
+        multivariate_price_df = multivariate_price_df.cumprod()  # (1 + R1) * (1 + R2) * ...
+        beta_per_stock_df = beta(multivariate_price_df=multivariate_price_df, beta_price_df=market_price_df,
+                                 beta_lag=beta_lag, return_lag=beta_return_lag)
+    else:
+        beta_per_stock_df = beta(multivariate_return_df=multivariate_daily_returns, beta_price_df=market_price_df,
+                                 beta_lag=beta_lag)
+    # calculate the weighted average across all stock betas
+    weighted_beta_df = pd.DataFrame(
+        data=(beta_per_stock_df * index_result.iloc[:, num_instruments: 2 * num_instruments].values).sum(axis=1,
+                                                                                                         skipna=False),
+        columns=['BETA_WEIGHT'])
+    weighted_beta_df *= -1  # since you are shorting the market
+    index_result = index_result.join(weighted_beta_df)
+    # calculate the short beta position
+    index_result[list(index_result)[-2] + '_WEIGHTED_RETURN'] = index_result.iloc[:, -2] * \
+                                                                index_result.iloc[:,-1]\
+                                                                    .shift(weight_observation_lag).values
+
+    # rearrange the columns
+    instrument_columns = list(index_result)[:num_instruments]
+    instrument_columns.append(list(index_result)[-3])  # add the beta instrument
+    weight_columns = list(index_result)[num_instruments: 2 * num_instruments]
+    weight_columns.append(list(index_result)[-2])  # add the beta weight
+    weighted_return_columns = [col_name for col_name in list(index_result) if col_name.endswith('_WEIGHTED_RETURN')]
+    all_col_names = instrument_columns + weight_columns + weighted_return_columns
+    index_result = index_result[all_col_names]
+    return index_result
+
+
 def _add_volatility_target(index_result: pd.DataFrame, volatility_target: float, volatility_lag: {int, list},
                            risky_weight_cap: float, number_of_instruments: int, weight_observation_lag: int):
     # calculate the risky weight
-    realized_volatility_gross_index = realized_volatility_v2(multivariate_return_df=index_result[['GROSS_INDEX_RETURN']], vol_lag=volatility_lag)
+    realized_volatility_gross_index = realized_volatility(multivariate_return_df=index_result[['GROSS_INDEX_RETURN']], vol_lag=volatility_lag)
     risky_weight = volatility_target / realized_volatility_gross_index
     risky_weight[risky_weight >= risky_weight_cap] = risky_weight_cap
-    index_result = index_result.join(pd.DataFrame(data=risky_weight.values, index=risky_weight.index, columns=['RISKY_WEIGHT']))  # TODO inplace?
+    index_result = index_result.join(pd.DataFrame(data=risky_weight.values, index=risky_weight.index, columns=['RISKY_WEIGHT']))
 
     # add new weights columns with weights adjusted based on the risky weight
     weight_post_vt_col_names = [col_name + '_WEIGHT_POST_VT' for col_name in list(index_result)[:number_of_instruments]]
@@ -262,7 +420,7 @@ def _add_volatility_target(index_result: pd.DataFrame, volatility_target: float,
 
 
 def _add_net_index_return(index_result: pd.DataFrame, transaction_costs: float, rolling_fee_pa: float,
-                          number_of_instruments: int):
+                          number_of_instruments: int, beta_carry_cost: float, weight_observation_lag: int):
     # calculate the index net of transaction costs
     weight_col_names = [col_name for col_name in list(index_result) if col_name.endswith('_WEIGHT_POST_VT')]
     if not len(weight_col_names):
@@ -276,6 +434,10 @@ def _add_net_index_return(index_result: pd.DataFrame, transaction_costs: float, 
                    range(1, len(index_result.index))]
     dt_s = pd.Series(data=dt, index=index_result.index)
     index_result['NET_INDEX_RETURN'] -= rolling_fee_pa * dt_s
+
+    # calculate the index net of the rolling cost of carrying the short beta position
+    index_result['NET_INDEX_RETURN'] += index_result['BETA_WEIGHT'].shift(weight_observation_lag) * dt_s.values * beta_carry_cost
+
     return index_result
 
 
@@ -443,3 +605,20 @@ def plot_results(df_dict: {dict}):
     performance_df.plot(grid=True, title='Performance', colormap=cmap)
     plt.show()
 
+
+def main():
+    from excel_tools import load_df
+    full_path = r'C:\Users\gafza\PycharmProjects\AlgorithmicTradingStrategies\excel_data\price_test.xlsx'
+    price = load_df(full_path=full_path, sheet_name='price')
+    price = price.pct_change()
+    beta_price = load_df(full_path=full_path, sheet_name='beta')
+    weight = load_df(full_path=full_path, sheet_name='weight')
+    print('calc...')
+    # b = beta(price, beta_price_df=beta_price, beta_lag=20)
+    index_df = index_daily_rebalanced(price, weight, market_price_df=beta_price, beta_lag=20, beta_return_lag=3,
+                                      beta_hedge_carry_cost_pa=0.005)
+    index_df.to_clipboard()
+
+
+if __name__ == '__main__':
+    main()
