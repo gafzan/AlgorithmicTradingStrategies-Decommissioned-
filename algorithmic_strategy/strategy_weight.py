@@ -11,7 +11,7 @@ import logging
 from database.financial_database import FinancialDatabase
 from database.config_database import my_database_name
 from dataframe_tools import merge_two_dataframes_as_of
-from financial_analysis.finance_tools import realized_volatility_v2
+from financial_analysis.finance_tools import realized_volatility
 
 
 # Logger
@@ -254,7 +254,7 @@ class VolatilityWeight(_PriceBasedProportionalWeight):
 
     def _get_dataframe(self):
         price = self._get_price_df()
-        volatility = realized_volatility_v2(multivariate_price_df=price, vol_lag=self.volatility_observation_period)
+        volatility = realized_volatility(multivariate_price_df=price, vol_lag=self.volatility_observation_period)
         return volatility
 
     def get_weight_desc(self):

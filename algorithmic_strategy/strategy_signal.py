@@ -10,7 +10,7 @@ import numpy as np
 # my modules
 from database.financial_database import FinancialDatabase
 from database.config_database import my_database_name
-from financial_analysis.finance_tools import rolling_average, realized_volatility_v2
+from financial_analysis.finance_tools import rolling_average, realized_volatility
 from dataframe_tools import merge_two_dataframes_as_of
 
 
@@ -329,7 +329,7 @@ class VolatilityRankSignal(_PriceBasedRankSignal):
 
     def _get_dataframe_to_be_ranked(self):
         price = self._get_price_df()
-        volatility = realized_volatility_v2(multivariate_price_df=price, vol_lag=self.volatility_observation_period)
+        volatility = realized_volatility(multivariate_price_df=price, vol_lag=self.volatility_observation_period)
         return volatility
 
 
