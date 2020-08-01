@@ -1070,14 +1070,15 @@ class BloombergFeeder(_DataFeeder):
     def _populate_underlying_table(self, ticker_list: list)->None:
         fields = ['SECURITY_TYP2', 'SECURITY_NAME', 'SHORT_NAME', 'GICS_SECTOR_NAME', 'GICS_INDUSTRY_NAME',
                   'COUNTRY_FULL_NAME', 'CITY_OF_DOMICILE', 'CRNCY', 'CIE_DES', 'COMPANY_WEB_ADDRESS', 'EXCH_CODE']
-        underlying_info = self.bbg_con.get_underlying_information(ticker_list, fields)
+        bbg_ticker_list = self._ticker_adjustment(ticker_list)
+        underlying_info = self.bbg_con.get_underlying_information(bbg_ticker_list, fields)
         default_str = 'N/A'  # in case attribute does not exist
         underlying_info.replace(to_replace='nan', value=default_str, inplace=True)
         underlying_list = []
-        counter = 1
-        for ticker in list(underlying_info.index):
-            progression_bar(counter, underlying_info.shape[0])
-            underlying = Underlying(ticker=ticker,
+        counter = 0
+        for ticker in bbg_ticker_list:
+            progression_bar(counter + 1, underlying_info.shape[0])
+            underlying = Underlying(ticker=ticker_list[counter],
                                     underlying_type=underlying_info.loc[ticker, 'SECURITY_TYP2'].upper(),
                                     long_name=underlying_info.loc[ticker, 'SECURITY_NAME'],
                                     short_name=underlying_info.loc[ticker, 'SHORT_NAME'],
@@ -1091,8 +1092,6 @@ class BloombergFeeder(_DataFeeder):
                                     website=underlying_info.loc[ticker, 'COMPANY_WEB_ADDRESS'],
                                     exchange=underlying_info.loc[ticker, 'EXCH_CODE'].upper().replace(' ', '_'))
             underlying_list.append(underlying)
-            counter += 1
-
         logger.debug('Append {} row(s) to the Underlying table in the database.'.format(len(underlying_list)))
         self.session.add_all(underlying_list)
         self._add_expiry_date_in_description(ticker_list)  # in case there are tickers that are future contracts
@@ -1144,11 +1143,17 @@ class BloombergFeeder(_DataFeeder):
     def _retrieve_dividend_df(self, ticker_list: list, start_date: {date, datetime}=None, end_date: {date, datetime}=None):
         logger.debug('Downloading dividend data from Bloomberg and reformat the DataFrame.')
         ticker_underlying_id_dict = self.get_ticker_underlying_attribute_dict(ticker_list, Underlying.id)
-        dividend_amount_df = self.bbg_con.get_dividend_data(ticker_list, start_date, end_date, do_pivot=False)
+        bbg_ticker_list = self._ticker_adjustment(ticker_list)
+        dividend_amount_df = self.bbg_con.get_dividend_data(bbg_ticker_list, start_date, end_date, do_pivot=False)
         if dividend_amount_df is None:
             return
         dividend_amount_df['comment'] = 'Loaded at {}.'.format(str(date.today()))
         dividend_amount_df['data_source'] = 'BLOOMBERG'
+        # first create a dictionary with tickers with and without the adjusting the FX tickers
+        ticker_bloomberg_format_dict = dict(zip(self._ticker_adjustment(ticker_list), ticker_list))
+        # remove the tickers that does not need replacement (when they are the same i.e. key = value)
+        ticker_bloomberg_format_dict = {key: value for key, value in ticker_bloomberg_format_dict.items() if key != value}
+        dividend_amount_df = dividend_amount_df.replace({'ticker': ticker_bloomberg_format_dict})
         dividend_amount_df['underlying_id'] = dividend_amount_df['ticker'].map(ticker_underlying_id_dict)
         dividend_amount_df.rename(columns={'ex_date': 'ex_div_date'}, inplace=True)
         dividend_amount_df['ex_div_date'] = pd.to_datetime(dividend_amount_df['ex_div_date'])
@@ -1157,7 +1162,8 @@ class BloombergFeeder(_DataFeeder):
     def _retrieve_open_high_low_close_volume_df(self, ticker_list: list, start_date: {date, datetime}, end_date: {date, datetime}):
         logger.debug('Download OHLC and volume data from Bloomberg and reformat the DataFrame.')
         fields = ['PX_OPEN', 'PX_HIGH', 'PX_LOW', 'PX_LAST', 'PX_VOLUME']
-        ohlc_volume_bbd_df = self.bbg_con.get_daily_data(ticker_list, fields, start_date, end_date)
+        bbg_ticker_list = self._ticker_adjustment(ticker_list)
+        ohlc_volume_bbd_df = self.bbg_con.get_daily_data(bbg_ticker_list, fields, start_date, end_date)
         if ohlc_volume_bbd_df.empty:
             return
         ohlc_volume_bbd_df = ohlc_volume_bbd_df.stack().reset_index().melt(['date', 'field'])  # 'reverse' pivot
@@ -1165,6 +1171,11 @@ class BloombergFeeder(_DataFeeder):
 
         # add a column with the underlying id and remove the ticker column
         ticker_underlying_id_dict = self.get_ticker_underlying_attribute_dict(ticker_list, Underlying.id)
+        # first create a dictionary with tickers with and without the adjusting the FX tickers
+        ticker_bloomberg_format_dict = dict(zip(self._ticker_adjustment(ticker_list), ticker_list))
+        # remove the tickers that does not need replacement (when they are the same i.e. key = value)
+        ticker_bloomberg_format_dict = {key: value for key, value in ticker_bloomberg_format_dict.items() if key != value}
+        ohlc_volume_bbd_df = ohlc_volume_bbd_df.replace({'ticker': ticker_bloomberg_format_dict})
         ohlc_volume_bbd_df['underlying_id'] = ohlc_volume_bbd_df['ticker'].map(ticker_underlying_id_dict)
         ohlc_volume_bbd_df.drop('ticker', inplace=True, axis=1)  # remove the ticker column
 
