@@ -56,14 +56,14 @@ class FinancialDatabase:
         """Assumes that tickers is either a string or a list of strings. Deletes all Underlying rows corresponding to
         the ticker(s). This will also remove all rows from tables that are subclasses to Underlying."""
         tickers = self.reformat_tickers(tickers, convert_to_list=True)
-        logger.info("Deleting {} ticker(s) from the database.\nTicker(s): %s".format(len(tickers)) % ', '.join(tickers))
-        for ticker in tickers:
-            if self.underlying_exist(ticker):
-                query_underlying = self.session.query(Underlying).filter(Underlying.ticker == ticker).first()
-                logger.debug('Delete {} from the database.'.format(ticker))
-                self.session.delete(query_underlying)
-            else:
-                logger.info('{} does not exist in the database.'.format(ticker))
+        logger.info("Trying to delete {} ticker(s) from the database.\nTicker(s): %s".format(len(tickers)) % ', '.join(tickers))
+        tickers_that_exists = [ticker for ticker in tickers if self.underlying_exist(ticker)]
+        if len(tickers_that_exists) < len(tickers):
+            logger.warning('{} ticker(s) could not be deleted since they do not exist in the database.'.format(len(tickers) - len(tickers_that_exists)))
+        for ticker in tickers_that_exists:
+            query_underlying = self.session.query(Underlying).filter(Underlying.ticker == ticker).first()
+            logger.debug('Delete {} from the database.'.format(ticker))
+            self.session.delete(query_underlying)
         self.session.commit()
         return
 
@@ -78,7 +78,6 @@ class FinancialDatabase:
             pass
 
         underlying_id_list = self.get_ticker_underlying_attribute_dict(ticker_list, Underlying.id).values()
-        # for table in [OpenPrice, HighPrice, LowPrice, ClosePrice, Volume, Dividend]:
 
         try:
             date_variable_in_table = table.obs_date
@@ -115,7 +114,6 @@ class FinancialDatabase:
                                      date_variable_in_table.in_(date_sub_list))) \
                         .delete(synchronize_session=False)
         self.session.commit()
-        # self._update_obs_date_and_dividend_history_status(ticker_list)
 
     def get_ticker(self, underlying_attribute_dict: dict = None) -> list:
         """Assume that underlying_attribute_dict is a dictionary with Underlying.attribute_name (e.g. Underlying.sector)
@@ -558,6 +556,7 @@ class _DataFeeder(FinancialDatabase):
         super().__init__(database_name, database_echo)
         self._data_table_list = [OpenPrice, HighPrice, LowPrice, ClosePrice, Volume, Dividend]
 
+
     def add_underlying(self, tickers: {str, list}, refresh_data_after_adding_underlying: bool = True) -> None:
         """Assumes that ticker is either a string or a list of strings. For each ticker the script downloads the
         information of the underlying and its data and inserts it to the database."""
@@ -579,10 +578,10 @@ class _DataFeeder(FinancialDatabase):
 
         self._populate_underlying_table(tickers)
         if refresh_data_after_adding_underlying:
-            self.refresh_data_for_tickers(tickers)
+            self.refresh_data_for_tickers(tickers, delete_existing_data=False)
         return
 
-    def refresh_data_for_tickers(self, tickers: {str, list}) -> None:
+    def refresh_data_for_tickers(self, tickers: {str, list}, delete_existing_data: bool = True) -> None:
         """Assumes that tickers is either a string or list of strings. Refreshes the OHLC, Volume and dividend data up
         to today."""
         tickers = self.reformat_tickers(tickers, convert_to_list=True)
@@ -594,8 +593,8 @@ class _DataFeeder(FinancialDatabase):
         if len(tickers) == 0:  # no tickers to refresh or add data to
             return
         start_date, end_date = self._get_start_end_dates_before_refresh(tickers)
-        self._refresh_dividends(tickers, start_date, end_date)  # refresh dividends
-        self._refresh_open_high_low_close_volume(tickers, start_date, end_date)  # refresh OHLC and Volume
+        self._refresh_dividends(tickers, start_date, end_date, delete_existing_data)  # refresh dividends
+        self._refresh_open_high_low_close_volume(tickers, start_date, end_date, delete_existing_data)  # refresh OHLC and Volume
         self._update_obs_date_and_dividend_history_status(tickers)  # update the dates
         return
 
@@ -649,7 +648,7 @@ class _DataFeeder(FinancialDatabase):
                         '_DynamicFinancialDatabase object')
 
     def _refresh_dividends(self, ticker_list: list, start_date: {date, datetime}=None,
-                           end_date: {date, datetime}=None) -> None:
+                           end_date: {date, datetime}=None, delete_existing_data: bool = True) -> None:
         """Populate the dividend table with ex-dividend dates and dividend amounts."""
         logger.debug('Refresh dividends for {} ticker(s)'.format(len(ticker_list))
                      + logger_time_interval_message(start_date, end_date))
@@ -674,8 +673,9 @@ class _DataFeeder(FinancialDatabase):
         if dividend_df is None or dividend_df.empty:
             return
         unique_dates_eligible_to_deletion = list(set(list(dividend_df['ex_div_date'].values)))
-        self._delete_open_high_low_close_volume_dividend_data(table=Dividend, ticker_list=ticker_list,
-                                                              date_list=unique_dates_eligible_to_deletion)
+        if delete_existing_data:
+            self._delete_open_high_low_close_volume_dividend_data(table=Dividend, ticker_list=ticker_list,
+                                                                  date_list=unique_dates_eligible_to_deletion)
         logger.debug('Append rows to the Dividend table in the database.')
         dividend_df.to_sql(Dividend.__tablename__, self._session.get_bind(), if_exists='append', index=False)
         logger.debug('Commit the new Dividend rows.')
@@ -687,7 +687,7 @@ class _DataFeeder(FinancialDatabase):
                         'object')
 
     def _refresh_open_high_low_close_volume(self, ticker_list: list, start_date: {date, datetime}=None,
-                                            end_date: {date, datetime}=None) -> None:
+                                            end_date: {date, datetime}=None, delete_existing_data: bool = True) -> None:
         """Populate the OpenPrice, HighPrice, LowPrice, ClosePrice and Volume tables with new rows."""
         logger.debug('Refresh OHLC and volume for {} ticker(s)'.format(len(ticker_list))
                      + logger_time_interval_message(start_date, end_date))
@@ -701,8 +701,9 @@ class _DataFeeder(FinancialDatabase):
             logger.debug("Append rows to the {} table in the database.".format(data_table.__tablename__))
             value_df = open_high_low_close_volume_df[open_high_low_close_volume_df['data_type'] == data_table.__valuename__].copy()
             unique_dates_eligible_to_deletion = list(set(list(value_df['obs_date'].values)))
-            self._delete_open_high_low_close_volume_dividend_data(table=data_table, ticker_list=ticker_list,
-                                                                  date_list=unique_dates_eligible_to_deletion)
+            if delete_existing_data:
+                self._delete_open_high_low_close_volume_dividend_data(table=data_table, ticker_list=ticker_list,
+                                                                      date_list=unique_dates_eligible_to_deletion)
             value_df.drop('data_type', axis=1, inplace=True)
             value_df.rename(columns={'value': data_table.__valuename__}, inplace=True)
             value_df.to_sql(data_table.__tablename__, self.session.get_bind(), if_exists='append', index=False)
@@ -716,6 +717,24 @@ class _DataFeeder(FinancialDatabase):
         column headers"""
         raise TypeError('_get_open_high_low_close_volume_df should not be called with an instance of a '
                         '_DynamicFinancialDatabase object')
+
+    def _ticker_adjustment(self, ticker_list: list):
+        """
+
+        :param ticker_list:
+        :return:
+        """
+        adjusted_ticker_list = [self._convert_fx_ticker(ticker) if ticker.endswith('.FX') else ticker for ticker in ticker_list]
+        return adjusted_ticker_list
+
+    @staticmethod
+    def _convert_fx_ticker(original_ticker)->str:
+        """
+        Return a string that has replaced the .FX suffix with another format.
+        :param original_ticker: str
+        :return: str
+        """
+        return original_ticker
 
     def __repr__(self):
         return f"<_DynamicFinancialDatabase(name = {self.database_name})>"
@@ -821,7 +840,7 @@ class YahooFinanceFeeder(_DataFeeder):
         yf_historical_data_unstacked_df.columns = ['data_type', 'ticker', 'obs_date', 'value']
         # convert back the tickers from Yahoo Finance format
         # first create a dictionary with tickers with and without the Yahoo Finance format
-        ticker_yahoo_finance_format_dict = dict(zip(self.convert_ticker_to_yahoo_finance_format(ticker_list), ticker_list))
+        ticker_yahoo_finance_format_dict = dict(zip(self._ticker_adjustment(ticker_list), ticker_list))
         # remove the tickers that does not need replacement (when they are the same i.e. key = value)
         ticker_yahoo_finance_format_dict = {key: value for key, value in ticker_yahoo_finance_format_dict.items()
                                             if key != value}
@@ -847,32 +866,8 @@ class YahooFinanceFeeder(_DataFeeder):
         return yf_historical_data_unstacked_clean_df[['data_type', 'obs_date', 'value', 'comment', 'data_source',
                                                       'underlying_id']]
 
-    @staticmethod
-    def convert_ticker_to_yahoo_finance_format(ticker_list: list):
-        """Assumes that ticker_list is a list of strings. Returns a new list where each ticker in list has been adjusted
-        to take into account the FX ticker format (base currency_price currency.FX) and index ticker format (name.INDEX)
-        """
-        if not isinstance(ticker_list, list):
-            raise TypeError('ticker_list needs to be a list.')
-        adjusted_ticker_list = []
-        for ticker in ticker_list:
-            if ticker.endswith('.FX'):  # check if ticker has the FX suffix
-                ticker = ticker.replace('.FX', '')  # remove the suffix
-                if ticker.endswith('_USD'):  # in Yahoo Finance, if the base currency is USD, the 'USD' is omitted
-                    ticker = ticker.replace('_USD', '')
-                else:
-                    ticker = ticker.split('_')[1] + ticker.split('_')[0]
-                    # ticker = ticker.replace('_', '')
-                ticker += '=X'  # add the Yahoo Finance FX suffix
-            elif ticker.endswith('.INDEX'):
-                ticker = '^' + ticker.replace('.INDEX', '')
-            else:
-                pass  # do nothing to the ticker
-            adjusted_ticker_list.append(ticker)
-        return adjusted_ticker_list
-
     def yahoo_finance_ticker(self, tickers: list):
-        adjusted_ticker_list = self.convert_ticker_to_yahoo_finance_format(tickers)
+        adjusted_ticker_list = self._ticker_adjustment(tickers)
         # create a list of Yahoo Finance ticker objects
         yf_tickers = [yfinance.Ticker(ticker) for ticker in adjusted_ticker_list]
         return yf_tickers
@@ -880,13 +875,24 @@ class YahooFinanceFeeder(_DataFeeder):
     def multiple_ticker_string(self, ticker_list: list) -> str:
         """Assumes that ticker_list is a list of strings. Method returns a string containing each ticker as a
         substring. E.g. the list ['TICKER_A', 'TICKER_B'] yields 'TICKER_A TICKER_B'"""
-        adjusted_ticker_list = self.convert_ticker_to_yahoo_finance_format(ticker_list)
-        result_string = ''
-        for ticker in adjusted_ticker_list:
-            result_string += str(ticker)
-            if ticker != adjusted_ticker_list[-1]:
-                result_string += ' '
+        adjusted_ticker_list = self._ticker_adjustment(ticker_list)
+        result_string = '%s' % ' '.join(adjusted_ticker_list)
         return result_string
+
+    @staticmethod
+    def _convert_fx_ticker(original_ticker) -> str:
+        """
+        Return a string that has replaced the .FX suffix with another format.
+        :param original_ticker: str
+        :return: str
+        """
+        original_ticker = original_ticker.replace('.FX', '')  # remove the suffix
+        if original_ticker.endswith('_USD'):  # in Yahoo Finance, if the base currency is USD, the 'USD' is omitted
+            original_ticker = original_ticker.replace('_USD', '')
+        else:
+            original_ticker = original_ticker.split('_')[1] + original_ticker.split('_')[0]
+        original_ticker += '=X'  # add the Yahoo Finance FX suffix
+        return original_ticker
 
     def __repr__(self):
         return f"<YahooFinancialDatabase(name = {self.database_name})>"
@@ -1089,17 +1095,30 @@ class BloombergFeeder(_DataFeeder):
 
         logger.debug('Append {} row(s) to the Underlying table in the database.'.format(len(underlying_list)))
         self.session.add_all(underlying_list)
+        self._add_expiry_date_in_description(ticker_list)  # in case there are tickers that are future contracts
+        logger.debug('Commit the new Underlying rows.')
+        self.session.commit()
 
+    def _add_expiry_date_in_description(self, tickers: list):
+        """
+        For the given tickers, check if the underlying type is 'FUTURE'. If True, then adjust the descriptuon to include
+        the expiry date of the futures contract: 'EXPIRY date'
+        :param tickers: list
+        :return: None
+        """
         # for all the tickers that are futures, adjust the description to include the expiry date
         # make query to the database
-        query_future_tickers = self.session.query(
-            Underlying.ticker
-        ).filter(
-            and_(
-                Underlying.underlying_type == 'FUTURE',
-                Underlying.ticker.in_(ticker_list)
-            )
-        ).all()
+        query_future_tickers = []
+        for ticker_sub_list in list_grouper(tickers, 500):
+            sub_query_future_tickers = self.session.query(
+                Underlying.ticker
+            ).filter(
+                and_(
+                    Underlying.underlying_type == 'FUTURE',
+                    Underlying.ticker.in_(ticker_sub_list)
+                )
+            ).all()
+            query_future_tickers.extend(sub_query_future_tickers)
 
         # list of the tickers that are futures
         future_tickers = [tup[0] for tup in query_future_tickers]
@@ -1121,9 +1140,6 @@ class BloombergFeeder(_DataFeeder):
                 ).update(
                     {'description': desc}
                 )
-
-        logger.debug('Commit the new Underlying rows.')
-        self.session.commit()
 
     def _retrieve_dividend_df(self, ticker_list: list, start_date: {date, datetime}=None, end_date: {date, datetime}=None):
         logger.debug('Downloading dividend data from Bloomberg and reformat the DataFrame.')
@@ -1167,6 +1183,17 @@ class BloombergFeeder(_DataFeeder):
         ticker = self.bbg_con.add_bbg_ticker_suffix(ticker)
         return ticker
 
+    @staticmethod
+    def _convert_fx_ticker(original_ticker) -> str:
+        """
+        Return a string that has replaced the .FX suffix with another format.
+        :param original_ticker: str
+        :return: str
+        """
+        original_ticker = original_ticker.replace('.FX', '')  # remove the suffix
+        original_ticker = original_ticker.split('_')[1] + original_ticker.split('_')[0] + ' BGN CURNCY'
+        return original_ticker
+
     def __repr__(self):
         return f"<BloombergFeeder(name = {self.database_name})>"
 
@@ -1196,6 +1223,6 @@ def add_futures():
 
 
 if __name__ == '__main__':
-    add_futures()
+    main()
 
 
