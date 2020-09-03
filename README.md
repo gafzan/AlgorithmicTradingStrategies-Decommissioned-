@@ -20,6 +20,7 @@ A back test can then be performed using the financial database that can incorpor
 The strategy can be analysed using various return and risk metrics such as rolling average return & volatility, maximum drawdown and active return compared to a choosen benchmark. The results can be saved in excel for further analysis in a standardized format.
 
 ---
+## Tutorial
 Now we are going to perform a simple (and not profitable) strategy that will be used to illustrate each of the parts of the project.
 
 Our strategy will be the following:
@@ -30,8 +31,11 @@ Our strategy will be the following:
 - **Signal**: pick the 10 least volatile stocks
 - **Weight**: use equal weighting i.e. 10% weight to each low volatility stock 
 
-## Tutorial (1/3) - Managing the data
+### Managing the data - Tutorial (1/3)
+First we are going to use the GUI to add the data that we need. Later we will go though how to implement the same operation with a script. The *tickers* that we need can be found on [Yahoo! Finance](https://finance.yahoo.com/quote/%5EOMX/components?p=%5EOMX). Make sure you extract the rows from the "Symbol" column. 
 
+
+### Setting up the strategy - Tutorial (1/3)
 
 <!--
 ## Tutorial part 1 - Managing the data
