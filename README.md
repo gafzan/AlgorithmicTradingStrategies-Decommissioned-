@@ -28,7 +28,7 @@ Our strategy will be the following:
 - **Eligibility filter**:
   1. *Liquidity > SEK 10 million*
   2. *Exclude stocks that are in the financial sector*
-- **Signal**: *pick the 10 least volatile stocks*
+- **Signal**: *on a quarterly basis pick the 10 least volatile stocks*
 - **Weight**: *use equal weighting i.e. 10% weight to each low volatility stock*
 
 ### Managing the data - Tutorial (1/3)
@@ -55,8 +55,24 @@ yf_feeder = YahooFinanceFeeder(my_database_name)
 yf_feeder.add_underlying(tickers)
 ```
 
-### Setting up the strategy - Tutorial (1/3)
+### Setting up the strategy - Tutorial (2/3)
+Now when we have the data, we can implement our strategy. We begin by importing what we need.
+```
+import pandas as pd
 
+# data base modules
+from database.config_database import my_database_name
+from database.financial_database import YahooFinanceFeeder
+
+# strategy modules
+from algorithmic_strategy.investment_universe import InvestmentUniverse
+from algorithmic_strategy.strategy_signal import VolatilityRankSignal
+from algorithmic_strategy.strategy_weight import EqualWeight
+from algorithmic_strategy.strategy import Index
+```
+We utilize the [```pandas``` package](https://pandas.pydata.org/pandas-docs/version/0.15/tutorials.html) to generate a rebalance calendar for the strategy.
+
+To setup our investment universe we need to initialize an InvestmentUniverse object. In order to do that, we need to have a list of tickers and observation dates.
 
 Licensed under [Apache License 2.0](LICENSE)
 
