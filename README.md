@@ -34,19 +34,30 @@ Our strategy will be the following:
 ### Managing the data - Tutorial (1/3)
 First we are going to use the GUI to add the data that we need. Later we will go though how to implement the same operation with a script. The *tickers* that we need can be found on [Yahoo! Finance](https://finance.yahoo.com/quote/%5EOMX/components?p=%5EOMX). Make sure you extract the rows from the "Symbol" column. 
 
+Run the script *financial_database_gui.py* and select **Action:** *Add underlying*, **Method:** *Manually*, **Data source:** *Yahoo Finance* and press "Perform action".
+Then paste the tickers you want to add to the data base as a string where each ticker is seperated by a comma (,) and press ENTER. 
+
+<!--
+Insert screenshot of GUI
+-->
+We could also add the data by executing the below script:
+```
+from database.config_database import my_database_name
+from database.financial_database import YahooFinanceFeeder
+
+# tickers of the stocks inlcuded in OMX 30 as of Sep 2020
+tickers = ["ERIC-B.ST", "SEB-A.ST", "TEL2-B.ST", "SECU-B.ST", "ASSA-B.ST", "KINV-B.ST", "AZN.ST", "SKA-B.ST", "NDA-SE.ST", "ALFA.ST", "SKF-B.ST", "HM-B.ST", "ABB.ST", "SWED-A.ST", "SAND.ST", "BOL.ST", "SSAB-A.ST", "INVE-B.ST", "ATCO-A.ST", "TELIA.ST", "VOLV-B.ST", "SWMA.ST", "ATCO-B.ST", "ESSITY-B.ST", "HEXA-B.ST", "SHB-A.ST", "ELUX-B.ST", "SCA-B.ST", "GETI-B.ST", "ALIV-SDB.ST"]
+
+# reference to a YahooFinanceFeeder object that is used to insert data using the Yahoo! Finance API
+yf_feeder = YahooFinanceFeeder(my_database_name)
+
+# add the OMX 30 stocks to your data base
+yf_feeder.add_underlying(tickers)
+```
 
 ### Setting up the strategy - Tutorial (1/3)
 
-<!--
-## Tutorial part 1 - Managing the data
 
-
-## Tutorial part 2 - Simple (and terrible) trading strategy
-
-## Tutorial part 3 - Performance evaluation
-
-## License & copyright
--->
 Licensed under [Apache License 2.0](LICENSE)
 
 
