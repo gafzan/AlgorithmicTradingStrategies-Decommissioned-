@@ -24,12 +24,12 @@ The strategy can be analysed using various return and risk metrics such as rolli
 Now we are going to perform a simple (and not profitable) strategy that will be used to illustrate each of the parts of the project.
 
 Our strategy will be the following:
-- **Investment universe**: OMX 30 (stocks of the 30 largest  firms traded on the Stockholm Stock Exchange)
+- **Investment universe**: *OMX 30 (stocks of the 30 largest  firms traded on the Stockholm Stock Exchange)*
 - **Eligibility filter**:
-  1. Liquidity > SEK 10 million
-  2. Exclude stocks that are in the financial sector
-- **Signal**: pick the 10 least volatile stocks
-- **Weight**: use equal weighting i.e. 10% weight to each low volatility stock 
+  1. *Liquidity > SEK 10 million*
+  2. *Exclude stocks that are in the financial sector*
+- **Signal**: *pick the 10 least volatile stocks*
+- **Weight**: *use equal weighting i.e. 10% weight to each low volatility stock*
 
 ### Managing the data - Tutorial (1/3)
 First we are going to use the GUI to add the data that we need. Later we will go though how to implement the same operation with a script. The *tickers* that we need can be found on [Yahoo! Finance](https://finance.yahoo.com/quote/%5EOMX/components?p=%5EOMX). Make sure you extract the rows from the "Symbol" column. 
