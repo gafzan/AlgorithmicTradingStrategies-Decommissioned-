@@ -62,7 +62,8 @@ import pandas as pd
 
 # data base modules
 from database.config_database import my_database_name
-from database.financial_database import YahooFinanceFeeder
+from database.financial_database import FinancialDatabase
+from database.models_db import Underlying
 
 # strategy modules
 from algorithmic_strategy.investment_universe import InvestmentUniverse
@@ -73,6 +74,14 @@ from algorithmic_strategy.strategy import Index
 We utilize the [```pandas``` package](https://pandas.pydata.org/pandas-docs/version/0.15/tutorials.html) to generate a rebalance calendar for the strategy.
 
 To setup our investment universe we need to initialize an InvestmentUniverse object. In order to do that, we need to have a list of tickers and observation dates.
+
+From the data base we can fetch our tickers of interest that we downloaded 
+```
+# create a financial data base handler and fetch the eligible tickers
+fin_db_handler = FinancialDatabase(my_database_name)
+eligible_underlying_attribute_dict = {Underlying.exchange: "STO", Underlying.underlying_type: "EQUITY"} 
+tickers = fin_db_handler.get_ticker(eligible_underlying_attribute_dict)
+```
 
 Licensed under [Apache License 2.0](LICENSE)
 
