@@ -71,7 +71,7 @@ from algorithmic_strategy.strategy_signal import VolatilityRankSignal
 from algorithmic_strategy.strategy_weight import EqualWeight
 from algorithmic_strategy.strategy import Index
 ```
-We utilize the [```pandas``` package](https://pandas.pydata.org/pandas-docs/version/0.15/tutorials.html) to generate a rebalance calendar for the strategy.
+We utilize the [pandas package](https://pandas.pydata.org/pandas-docs/version/0.15/tutorials.html) to generate a rebalance calendar for the strategy.
 
 To setup our investment universe we need to initialize an InvestmentUniverse object. In order to do that, we need to have a list of tickers and observation dates.
 
