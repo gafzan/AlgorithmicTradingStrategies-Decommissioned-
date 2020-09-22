@@ -83,6 +83,8 @@ eligible_underlying_attribute_dict = {Underlying.exchange: "STO", Underlying.und
 tickers = fin_db_handler.get_ticker(eligible_underlying_attribute_dict)
 ```
 
+*TO BE CONTINUED... this tutorial is a work in progress*
+
 Licensed under [Apache License 2.0](LICENSE)
 
 
