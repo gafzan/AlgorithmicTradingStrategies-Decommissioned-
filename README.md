@@ -35,7 +35,7 @@ Our strategy will be the following:
 First we are going to use the GUI to add the data that we need. Later we will go though how to implement the same operation with a script. The *tickers* that we need can be found on [Yahoo! Finance](https://finance.yahoo.com/quote/%5EOMX/components?p=%5EOMX). Make sure you extract the rows from the "Symbol" column. 
 
 Run the script *financial_database_gui.py* and select **Action:** *Add underlying*, **Method:** *Manually*, **Data source:** *Yahoo Finance* and press "Perform action".
-Then paste the tickers you want to add to the data base as a string where each ticker is seperated by a comma (,) and press ENTER. 
+Then paste the tickers you want to add to the data base as a string where each ticker is seperated by a comma (,) and press ENTER. This will make the script to download financial data (OHLC, volume and dividend quotes) from Yahoo! Finance and store it in the database.
 
 <!--
 Insert screenshot of GUI
@@ -62,7 +62,7 @@ import pandas as pd
 
 # data base modules
 from database.config_database import my_database_name
-from database.financial_database import FinancialDatabase
+from database.financial_database import YahooFinanceFeeder
 from database.models_db import Underlying
 
 # strategy modules
