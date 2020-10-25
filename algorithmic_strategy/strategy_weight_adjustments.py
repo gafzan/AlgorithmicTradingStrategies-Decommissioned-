@@ -213,6 +213,8 @@ class BetaHedge(_DatabaseDependentWeightAdjustment):
         strategy_beta_df = self._apply_constraints(scaling_factor_df=strategy_beta_df)
         strategy_beta_df *= -1  # make it a short position
 
+        # TODO when beta is NaN make all other weights NaN
+
         # add the beta instrument and the beta weight to the daily return and weight DataFrames
         multivariate_daily_return_df = merge_two_dataframes_as_of(multivariate_daily_return_df, beta_price_df.pct_change(), '_BETA')
         multivariate_daily_weight_df = merge_two_dataframes_as_of(multivariate_daily_weight_df, strategy_beta_df.shift(self.scaling_factor_lag))
