@@ -100,10 +100,7 @@ class _RankSignal(Signal):
         data_to_be_ranked_eligible = data_to_be_ranked * self.eligibility_df.values
         ranked_df = data_to_be_ranked_eligible.rank(axis='columns', method='first', ascending=not self.descending,
                                                     numeric_only=True)
-        print(ranked_df)
         ranked_df = self._winsorize_data(ranked_df)
-        print('Windsorizing...')
-        print(ranked_df)
         if self.rank_fraction is None:
             signal_array = np.where(ranked_df <= self.rank_number, self.include, not self.include)
         else:
