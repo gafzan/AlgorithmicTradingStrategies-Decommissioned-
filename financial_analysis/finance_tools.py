@@ -84,9 +84,26 @@ def rolling_average(data_df: pd.DataFrame, avg_lag: int, max_number_of_na: {int,
 def _rolling_calc(multivariate_df: pd.DataFrame, lag_parameter: {int, tuple, list}, convert_to_returns: bool, function: str,
                   aggregate_method: str = None, max_number_of_na: int = 5, return_lag: int = 1,
                   annualized_factor: int = 252, price_data_for_beta_calc_df: pd.DataFrame = None, minimum_allowed_lag: int = 2):
+    """
+    Loops through each lag parameter and calculates a function over the DataFrame
+    :param multivariate_df: pd.DataFrame
+    :param lag_parameter: int, tuple or list
+    :param convert_to_returns: bool
+    :param function: str
+    :param aggregate_method: str
+    :param max_number_of_na: int
+    :param return_lag: int
+    :param annualized_factor: int
+    :param price_data_for_beta_calc_df: pd.DataFrame
+    :param minimum_allowed_lag: int
+    :return: pd.DataFrame
+    """
+
+    # check parameters
     lag_parameter = _parameter_input_check(lag_parameter, minimum_allowed_lag)
     if multivariate_df.shape[0] < max(lag_parameter) + convert_to_returns + return_lag - 1:
         raise ValueError('multivariate_df needs to have at least {} rows.'.format(max(lag_parameter) + convert_to_returns + return_lag - 1))
+
     col_list = multivariate_df.columns[multivariate_df.iloc[1:, :].isna().any()].tolist()
     col_with_only_values = multivariate_df.columns[~multivariate_df.iloc[1:, :].isna().any()].tolist()
     col_list.append(col_with_only_values)
@@ -102,8 +119,9 @@ def _rolling_calc(multivariate_df: pd.DataFrame, lag_parameter: {int, tuple, lis
                 df_clean = multivariate_df.loc[:, col_name]
             if convert_to_returns:
                 df_clean = df_clean.pct_change(return_lag)
+
             # here is where the main calculation is done
-            df_clean = _function_calc(df_clean, function, lag=lag, return_lag=return_lag,
+            df_clean = _function_calc(df=df_clean, func_name=function, lag=lag, return_lag=return_lag,
                                       price_data_for_beta_calc_df=price_data_for_beta_calc_df,
                                       annualized_factor=annualized_factor)
             result_sub_df = result_sub_df.join(df_clean)
@@ -161,6 +179,22 @@ def _parameter_input_check(param: {int, tuple, list}, minimum_value: int):
     if min(param) < minimum_value:
         raise ValueError('Parameter value needs to be greater or equal to {}.'.format(minimum_value))
     return param
+
+
+def convert_daily_return_to_daily_price_df(multivariate_daily_return_df: pd.DataFrame, initial_value: float = 1.0):
+    """
+    Takes a multivariate DataFrame assumed to contain daily returns and recomputes a normalized performance DataFrame
+    :param multivariate_daily_return_df: pd.DataFrame
+    :param initial_value: float
+    :return: pd.DataFrame
+    """
+    multivariate_price_df = multivariate_daily_return_df.shift(-1)  # shift the daily returns backwards
+    multivariate_price_df[~multivariate_price_df.isnull()] = 1  # where there is a shifted return set value to 1
+    multivariate_price_df.iloc[-1, :] = 1  # last rows should be 1 since the shifted value is always nan
+    multivariate_price_df += multivariate_daily_return_df.fillna(0)  # 1 + daily return
+    multivariate_price_df = multivariate_price_df.cumprod()  # (1 + R1) * (1 + R2) * ...
+    multivariate_price_df *= initial_value
+    return multivariate_price_df
 
 
 def _set_nan_for_missing_data(original_multivariate_df: pd.DataFrame, calculated_value_df: pd.DataFrame,
