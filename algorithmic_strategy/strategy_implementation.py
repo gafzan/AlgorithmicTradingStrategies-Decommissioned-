@@ -5,7 +5,7 @@ from matplotlib import pyplot as plt
 import pandas as pd
 
 # my modules
-from algorithmic_strategy.strategy import Index
+from algorithmic_strategy.strategy_OLD import Index
 from algorithmic_strategy.strategy_weight import EqualWeight, VolatilityWeight
 from algorithmic_strategy.strategy_signal import SimpleMovingAverageCrossSignal
 from algorithmic_strategy.investment_universe import InvestmentUniverse
