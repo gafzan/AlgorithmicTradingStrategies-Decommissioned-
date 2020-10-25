@@ -138,7 +138,14 @@ class FinancialDatabase:
             underlying_attribute_value = underlying_attribute_dict[underlying_attribute]  # e.g. 'ENERGY' if sector
             if not isinstance(underlying_attribute_value, list):
                 underlying_attribute_value = [underlying_attribute_value]  # string -> [string]
-            underlying_attribute_value = capital_letter_no_blanks(underlying_attribute_value)
+            if underlying_attribute in [Underlying.ticker, Underlying.short_name]:
+                # capital letters with blanks for ticker and short_name
+                underlying_attribute_value = [attribute.upper() for attribute in underlying_attribute_value.copy()]
+            elif underlying_attribute not in [Underlying.has_dividend_history, Underlying.long_name]:
+                # unless attribute is has_dividend_history (int) or long_name use capital letters with blanks replaced by '_'
+                underlying_attribute_value = capital_letter_no_blanks(underlying_attribute_value)
+            else:
+                pass
             query_ticker = query_ticker.filter(underlying_attribute.in_(underlying_attribute_value))
         query_ticker.order_by(Underlying.ticker)
         ticker_list = [tup[0] for tup in query_ticker]  # extract the ticker string from the result
@@ -555,7 +562,6 @@ class _DataFeeder(FinancialDatabase):
     def __init__(self, database_name: str, database_echo=False):
         super().__init__(database_name, database_echo)
         self._data_table_list = [OpenPrice, HighPrice, LowPrice, ClosePrice, Volume, Dividend]
-
 
     def add_underlying(self, tickers: {str, list}, refresh_data_after_adding_underlying: bool = True) -> None:
         """Assumes that ticker is either a string or a list of strings. For each ticker the script downloads the
