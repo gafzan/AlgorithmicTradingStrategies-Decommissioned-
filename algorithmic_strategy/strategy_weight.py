@@ -3,6 +3,7 @@ strategy_weight.py
 """
 import pandas as pd
 from pandas.tseries.offsets import BDay
+import pandas.core.common as com
 import numpy as np
 
 import logging
@@ -27,13 +28,38 @@ class Weight:
     """Class definition of Weight"""
 
     # Initializer / instance attribute
-    def __init__(self, signal_df: pd.DataFrame = None):
+    def __init__(self, signal_df: pd.DataFrame = None, max_instrument_weight: float = None,
+                 min_instrument_weight: float = None):
         self._signal_df = signal_df
+        self.max_instrument_weight = max_instrument_weight
+        self.min_instrument_weight = min_instrument_weight
 
     def get_weights(self):
         if self.signal_df is None:
             raise ValueError('signal_df not yet assigned.')
-        return self._calculate_weight()
+        weight_df = self._calculate_weight()
+        if com.count_not_none(self.max_instrument_weight, self.min_instrument_weight) > 0:
+            weight_df = self._apply_basic_constraint(weight_df)
+        return weight_df
+
+    def _apply_basic_constraint(self, weight_df):
+        """
+        Applies min max constraint on the weights in weight_df. This is the most basic form of constraint.
+        :param weight_df: pd.DataFrame
+        :return: pd.DataFrame
+        """
+
+        max_instrument_w = 999.0 if self.max_instrument_weight is None else self.max_instrument_weight
+        min_instrument_w = -999.0 if self.min_instrument_weight is None else self.min_instrument_weight
+        weight_df = weight_df.copy()
+        for col_name in list(weight_df):
+            # apply the lambda function that adds the constraints
+            weight_df.loc[:, col_name] = weight_df[col_name].apply(
+                lambda x: max(min_instrument_w, min(max_instrument_w, x))
+                if not np.isnan(x)
+                else np.nan
+            )
+        return weight_df
 
     def _calculate_weight(self):
         # to be overridden
