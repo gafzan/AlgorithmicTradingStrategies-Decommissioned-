@@ -132,17 +132,18 @@ class FinancialDatabase:
                                                                        for key, value in underlying_attribute_dict.items()])
         logger.info(logger_message)
 
-        # TODO need to split the request for large number of tickers
         query_ticker = self.session.query(Underlying.ticker)
         for underlying_attribute in underlying_attribute_list:
             underlying_attribute_value = underlying_attribute_dict[underlying_attribute]  # e.g. 'ENERGY' if sector
             if not isinstance(underlying_attribute_value, list):
                 underlying_attribute_value = [underlying_attribute_value]  # string -> [string]
-            if underlying_attribute in [Underlying.ticker, Underlying.short_name]:
-                # capital letters with blanks for ticker and short_name
+            # TODO smarter way to handle blanks and '_'
+            if underlying_attribute in [Underlying.ticker, Underlying.short_name, Underlying.underlying_type]:
+                # capital letters with blanks
                 underlying_attribute_value = [attribute.upper() for attribute in underlying_attribute_value.copy()]
             elif underlying_attribute not in [Underlying.has_dividend_history, Underlying.long_name]:
-                # unless attribute is has_dividend_history (int) or long_name use capital letters with blanks replaced by '_'
+                # unless attribute is has_dividend_history (int) or long_name use capital letters with blanks replaced
+                # by '_'
                 underlying_attribute_value = capital_letter_no_blanks(underlying_attribute_value)
             else:
                 pass
@@ -661,14 +662,17 @@ class _DataFeeder(FinancialDatabase):
 
         # remove the tickers of non dividend paying assets
         excluded_underlying_types = ['INDEX', 'FUTURE']
-        query_eligible_tickers = self.session.query(
-            Underlying.ticker
-        ).filter(
-            and_(
-                Underlying.ticker.in_(ticker_list),
-                ~Underlying.underlying_type.in_(excluded_underlying_types)
-            )
-        ).all()
+        query_eligible_tickers = []
+        for ticker_sub_list in list_grouper(ticker_list, 500):
+            sub_query_eligible_tickers = self.session.query(
+                Underlying.ticker
+            ).filter(
+                and_(
+                    Underlying.ticker.in_(ticker_sub_list),
+                    ~Underlying.underlying_type.in_(excluded_underlying_types)
+                )
+            ).all()
+            query_eligible_tickers.extend(sub_query_eligible_tickers)
 
         ticker_list = [tup[0] for tup in query_eligible_tickers]  # list of the eligible tickers
         if len(ticker_list) == 0:
@@ -764,7 +768,7 @@ class YahooFinanceFeeder(_DataFeeder):
             default_str = 'NA'  # in case the attribute does not exist, use a default string
             # e.g. it is normal for an INDEX or FX rate to not have a website
             underlying = Underlying(ticker=ticker_list[counter],
-                                    underlying_type=ticker_info.get('quoteType', default_str),
+                                    underlying_type=ticker_info.get('quoteType', default_str).upper(),
                                     long_name=ticker_info.get('longName'),
                                     short_name=ticker_info.get('shortName'),
                                     sector=capital_letter_no_blanks(ticker_info.get('sector', default_str)),
@@ -1005,7 +1009,7 @@ class ExcelFeeder(_DataFeeder):
         underlying_list = []
         for ticker in ticker_list:
             underlying = Underlying(ticker=ticker,
-                                    underlying_type=capital_letter_no_blanks(underlying_df['underlying_type'].values[0]),
+                                    underlying_type=underlying_df['underlying_type'].values[0].upper(),
                                     long_name=underlying_df['long_name'].values[0],
                                     short_name=underlying_df['short_name'].values[0],
                                     sector=capital_letter_no_blanks(underlying_df['sector'].values[0]),
@@ -1098,6 +1102,7 @@ class BloombergFeeder(_DataFeeder):
                                     website=underlying_info.loc[ticker, 'COMPANY_WEB_ADDRESS'],
                                     exchange=underlying_info.loc[ticker, 'EXCH_CODE'].upper().replace(' ', '_'))
             underlying_list.append(underlying)
+            counter += 1
         logger.debug('Append {} row(s) to the Underlying table in the database.'.format(len(underlying_list)))
         self.session.add_all(underlying_list)
         self._add_expiry_date_in_description(ticker_list)  # in case there are tickers that are future contracts
