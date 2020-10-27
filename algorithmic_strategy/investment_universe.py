@@ -21,7 +21,10 @@ class InvestmentUniverse:
         if com.count_not_none(start, end, periods, freq) != 0:
             self._observation_calendar = pd.date_range(start, end, periods, freq)
         else:
-            if observation_calendar.is_monotonic_increasing:
+            if observation_calendar is None:
+                raise ValueError('Need to specify observation_calendar or the parameters of an observation calendar i.e'
+                                 'start, end, periods, freq')
+            elif observation_calendar.is_monotonic_increasing:
                 self._observation_calendar = observation_calendar
             else:
                 raise ValueError('observation_calendar needs to be an instance of a DatatimeIndex object that is '
