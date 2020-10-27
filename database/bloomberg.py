@@ -191,7 +191,7 @@ class BloombergConnection:
 
         # for each ticker sum dividend payments on same ex-dates
         dividend_df = dividend_df.groupby(by=['ticker', 'ex_date'])['dividend_amount'].sum()
-        dividend_df.reset_index(inplace=True)
+        dividend_df = dividend_df.reset_index()
 
         if do_pivot:
             dividend_df = pd.pivot_table(dividend_df, values='dividend_amount', index='ex_date', columns='ticker')
