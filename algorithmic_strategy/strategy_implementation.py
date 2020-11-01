@@ -36,7 +36,7 @@ def main():
     # setup the index
     sma_eqw_index = Index(investment_universe=liquid_stock_universe, observation_calendar=pd.date_range('2013', '2020',
                                                                                                         freq='M'))
-    sma_eqw_index.weight = EqualWeight(gross_equal_weights=False)
+    sma_eqw_index.weight = EqualWeight(net_zero_exposure=False)
     sma_eqw_index.signal = SimpleMovingAverageCrossSignal(10, 50)
     index_reporting(sma_eqw_index, index_name='SMA', print_results=print_result, save_results=save_results, plot_results=plot_result,
                     benchmark_ticker=benchmark_ticker)
