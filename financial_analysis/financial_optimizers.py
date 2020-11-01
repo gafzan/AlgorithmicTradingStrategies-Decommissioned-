@@ -25,38 +25,42 @@ def total_allocation_constraint(weight, allocation: float, upper_bound: bool = T
         return weight.sum() - allocation
 
 
-def portfolio_variance(weights: np.array, covariance_matrix: np.array):
+def portfolio_variance(weights: np.array, covariance_matrix: np.array, annualizing_factor: float):
     """
     Return the portfolio variance
     :param weights: np.array
     :param covariance_matrix: np.array
+    :param annualizing_factor: float
     :return: float
     """
-    return np.matmul(np.matmul(weights, covariance_matrix), np.transpose(weights))
+    return annualizing_factor * np.matmul(np.matmul(weights, covariance_matrix), np.transpose(weights))
 
 
-def portfolio_volatility(weights: np.array, covariance_matrix: np.array):
+def portfolio_volatility(weights: np.array, covariance_matrix: np.array, annualizing_factor: float):
     """
     Return the portfolio volatility
     :param weights: np.array
     :param covariance_matrix: np.array
+    :param annualizing_factor: float
     :return: float
     """
-    port_variance = portfolio_variance(weights, covariance_matrix)
+    port_variance = portfolio_variance(weights, covariance_matrix, annualizing_factor)
     return np.sqrt(port_variance)
 
 
-def negative_risk_aversion_adjusted_return(weight: np.array, covariance_matrix: np.array, mean_returns: np.array, lambda_: float):
+def negative_risk_aversion_adjusted_return(weight: np.array, covariance_matrix: np.array, mean_returns: np.array, lambda_: float,
+                                           annualizing_factor: float):
     """
     Returns portfolio returns - lambda * portfolio volatility. This is minimized in a mean variance optimization framework.
     :param weight: np.array
     :param covariance_matrix: np.array
     :param mean_returns: np.array
     :param lambda_: float
+    :param annualizing_factor: float
     :return: float
     """
-    port_ret = np.matmul(weight, np.transpose(mean_returns))
-    port_vol = portfolio_volatility(weight, covariance_matrix)
+    port_ret = annualizing_factor * np.matmul(weight, np.transpose(mean_returns))
+    port_vol = portfolio_volatility(weight, covariance_matrix, annualizing_factor)
     return lambda_ * port_vol - port_ret
 
 
@@ -106,7 +110,8 @@ def get_instrument_weight_bounds(min_instrument_weight: {float, list, tuple}, ma
 
 
 def optimal_mean_variance_portfolio_weights_with_constraints(mean_returns: np.array, covariance_matrix, initial_guess: np.array = None, min_total_weight: float = 0.,  max_total_weight: float = 1.,
-                                                             min_instrument_weight: {float, list, tuple}=0., max_instrument_weight: {float, list, tuple}=1., risk_aversion_factor: float = 1, return_target: float = 0):
+                                                             min_instrument_weight: {float, list, tuple}=0., max_instrument_weight: {float, list, tuple}=1., risk_aversion_factor: float = 1, return_target: float = 0,
+                                                             annualizing_factor: float = 252):
     num_assets = covariance_matrix.shape[0]
     if initial_guess is None:  # if not initial guess is provided, use equal weighting as an initial guess
         initial_guess = np.array(num_assets * [1 / num_assets])
@@ -129,14 +134,14 @@ def optimal_mean_variance_portfolio_weights_with_constraints(mean_returns: np.ar
     total_weight_cons = [min_total_weight_cons, max_total_weight_cons, return_target_cons]
 
     # find the solution using an active set optimizer
-    sol = minimize(negative_risk_aversion_adjusted_return, initial_guess, method='SLSQP', args=(covariance_matrix, mean_returns, risk_aversion_factor, ),
-                   bounds=instrument_weight_bounds, constraints=total_weight_cons)
+    sol = minimize(negative_risk_aversion_adjusted_return, initial_guess, method='SLSQP', args=(covariance_matrix, mean_returns, risk_aversion_factor, annualizing_factor, ),
+                   bounds=instrument_weight_bounds, constraints=total_weight_cons, tol=1e-9)
     return sol.x
 
 
 def minimum_variance_portfolio_weights_with_constraints(covariance_matrix, initial_guess: np.array = None, max_total_weight: float = 1.,
-                                                        min_instrument_weight: {float, list, tuple}=0., max_instrument_weight: {float, list, tuple}=1.):
-
+                                                        min_instrument_weight: {float, list, tuple}=0., max_instrument_weight: {float, list, tuple}=1.,
+                                                        annualizing_factor: float = 252):
     num_assets = covariance_matrix.shape[0]
     if initial_guess is None:  # if not initial guess is provided, use equal weighting as an initial guess
         initial_guess = np.array(num_assets * [1 / num_assets])
@@ -150,13 +155,9 @@ def minimum_variance_portfolio_weights_with_constraints(covariance_matrix, initi
                              'args': (max_total_weight, )}
 
     # find the solution using an active set optimizer
-    sol = minimize(portfolio_variance, initial_guess, method='SLSQP', args=(covariance_matrix, ),
-                   bounds=instrument_weight_bounds, constraints=max_total_weight_cons)
+    sol = minimize(portfolio_variance, initial_guess, method='SLSQP', args=(covariance_matrix, annualizing_factor, ),
+                   bounds=instrument_weight_bounds, constraints=max_total_weight_cons, tol=1e-9)
     return sol.x
-
-
-def minimum_variance_optimizer(covariance_matrix, initial_guess):
-    pass
 
 
 def _theoretical_mean_variance_optimizer(mean_returns: {np.array, None}, covariance_matrix: np.array, return_target: {float, None},
@@ -267,9 +268,10 @@ def efficient_frontier(mean_returns: np.array, covariance_matrix: np.array, allo
     return portfolio_weight, portfolio_return, portfolio_vol
 
 
-def rolling_mean_variance_implementation(strategy_returns: pd.DataFrame, rolling_window: int, min_total_weight: float = 0.,  max_total_weight: float = 1.,
-                                         min_instrument_weight: {float, list, tuple}=0., max_instrument_weight: {float, list, tuple}=1.,
-                                         risk_aversion_factor: int = 1, return_target: float = 0):
+def rolling_mean_variance_implementation(strategy_returns: pd.DataFrame, rolling_window: int, min_total_weight: float = 0.,
+                                         max_total_weight: float = 1., min_instrument_weight: {float, list, tuple}=0.,
+                                         max_instrument_weight: {float, list, tuple}=1., risk_aversion_factor: int = 1,
+                                         return_target: float = 0):
     # check inputs
     if rolling_window < 2 or rolling_window > strategy_returns.shape[0]:
         raise ValueError('rolling_window needs to be larger or equal to 2 and smaller or equal to the length of the '
