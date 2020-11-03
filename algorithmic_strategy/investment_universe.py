@@ -65,7 +65,7 @@ class InvestmentUniverse:
         """
         stock_is_eligible_df = pd.DataFrame(data=self._eligibility_df.sum().gt(0), index=list(self._eligibility_df),
                                             columns=['eligibility'])
-        return list(stock_is_eligible_df[stock_is_eligible_df['eligibility'] == True].index)
+        return list(stock_is_eligible_df[stock_is_eligible_df['eligibility']].index)
 
     # ------------------------------------------------------------------------------------------------------------------
     # filter methods
@@ -82,12 +82,25 @@ class InvestmentUniverse:
             currency = ''
         self._apply_dataframe(liquidity_eligibility, '{} day avg. liquidity > {} {}'.format(avg_lag, currency.upper(), liquidity_threshold))
 
+    def apply_close_price_history_filter(self, minimum_number_consecutive_published_prices: int, tolerance: float = 0.95):
+        closing_price_data = self._get_closing_price_data(lag=minimum_number_consecutive_published_prices)
+
+        # is NaN only when there is less than minimum_number_consecutive_published_prices x tolerance available prices
+        rolling_avg_df = closing_price_data.rolling(window=minimum_number_consecutive_published_prices,
+                                                    min_periods=int(tolerance * minimum_number_consecutive_published_prices)).mean()
+        price_history_eligibility = pd.DataFrame(np.where(rolling_avg_df.isna(), 0, 1), index=rolling_avg_df.index,
+                                                 columns=rolling_avg_df.columns)
+        self._apply_dataframe(price_history_eligibility, '{}% of prices has been published for the past {} days'
+                              .format(tolerance * 100, minimum_number_consecutive_published_prices))
+
     def apply_published_close_price_filter(self, max_number_days_since_publishing: int):
-        if max_number_days_since_publishing < 1:
-            raise ValueError('max_number_days_since_publishing needs to be an int larger or equal to 1.')
-        start_date, end_date = self.get_start_end_dates()
-        closing_price_data = self._financial_database_handler.get_close_price_df(self.tickers, start_date - BDay(max_number_days_since_publishing + 10), end_date)
+        closing_price_data = self._get_closing_price_data(lag=max_number_days_since_publishing)
+        # first avg is calculated to check the availability at the start of the data (in case you observe at the start
+        # of the available data)
+        strict_rolling_avg_df = closing_price_data.rolling(window=max_number_days_since_publishing).mean()
+        strict_rolling_avg_df.fillna(method='ffill', inplace=True)
         rolling_avg_df = closing_price_data.rolling(window=max_number_days_since_publishing, min_periods=1).mean()  # is NaN only when there is not a single value within the given period
+        rolling_avg_df *= strict_rolling_avg_df.values
         price_availability_eligibility = pd.DataFrame(np.where(rolling_avg_df.isna(), 0, 1), index=rolling_avg_df.index,
                                                       columns=rolling_avg_df.columns)
         self._apply_dataframe(price_availability_eligibility, 'price published for the past {} days.'.format(max_number_days_since_publishing))
@@ -105,6 +118,20 @@ class InvestmentUniverse:
                 return self._eligibility_df.replace(0, np.nan)
         else:
             raise ValueError('No filter has been applied yet.')
+
+    def _get_closing_price_data(self, lag: int) -> pd.DataFrame:
+        if lag < 1:
+            raise ValueError('lag when loading prices needs to be an int larger or equal to 1.')
+        start_date, end_date = self.get_start_end_dates()
+        closing_price_data = self._financial_database_handler.get_close_price_df(self.tickers, start_date - BDay(lag + 10), end_date)
+        return closing_price_data
+
+    def _get_liquidity_data(self, lag: int, currency: {str, None}) -> pd.DataFrame:
+        if lag < 1:
+            raise ValueError('lag when loading liquidity needs to be an int larger or equal to 1.')
+        start_date, end_date = self.get_start_end_dates()
+        liquidity_data = self._financial_database_handler.get_liquidity_df(self.tickers, start_date - BDay(lag + 10), end_date, currency)
+        return liquidity_data
 
     @property
     def observation_calendar(self):

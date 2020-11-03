@@ -137,13 +137,13 @@ class FinancialDatabase:
             underlying_attribute_value = underlying_attribute_dict[underlying_attribute]  # e.g. 'ENERGY' if sector
             if not isinstance(underlying_attribute_value, list):
                 underlying_attribute_value = [underlying_attribute_value]  # string -> [string]
-            # TODO smarter way to handle blanks and '_'
-            if underlying_attribute in [Underlying.ticker, Underlying.short_name, Underlying.underlying_type]:
+            if underlying_attribute in [Underlying.ticker]:
                 # capital letters with blanks
                 underlying_attribute_value = [attribute.upper() for attribute in underlying_attribute_value.copy()]
-            elif underlying_attribute not in [Underlying.has_dividend_history, Underlying.long_name]:
-                # unless attribute is has_dividend_history (int) or long_name use capital letters with blanks replaced
-                # by '_'
+            elif underlying_attribute not in [Underlying.has_dividend_history, Underlying.latest_observation_date,
+                                              Underlying.latest_observation_date_with_values, Underlying.oldest_observation_date,
+                                              Underlying.first_ex_div_date]:
+                # capital letters without blanks (replaced by '_')
                 underlying_attribute_value = capital_letter_no_blanks(underlying_attribute_value)
             else:
                 pass
@@ -768,18 +768,18 @@ class YahooFinanceFeeder(_DataFeeder):
             default_str = 'NA'  # in case the attribute does not exist, use a default string
             # e.g. it is normal for an INDEX or FX rate to not have a website
             underlying = Underlying(ticker=ticker_list[counter],
-                                    underlying_type=ticker_info.get('quoteType', default_str).upper(),
-                                    long_name=ticker_info.get('longName'),
-                                    short_name=ticker_info.get('shortName'),
+                                    underlying_type=capital_letter_no_blanks(ticker_info.get('quoteType', default_str)),
+                                    long_name=capital_letter_no_blanks(ticker_info.get('longName')),
+                                    short_name=capital_letter_no_blanks(ticker_info.get('shortName')),
                                     sector=capital_letter_no_blanks(ticker_info.get('sector', default_str)),
                                     industry=capital_letter_no_blanks(ticker_info.get('industry', default_str)),
                                     currency=capital_letter_no_blanks(ticker_info.get('currency', default_str)),
                                     country=capital_letter_no_blanks(ticker_info.get('country', default_str)),
-                                    city=ticker_info.get('city', default_str),
+                                    city=capital_letter_no_blanks(ticker_info.get('city', default_str)),
                                     address=ticker_info.get('address1', default_str),
                                     description=ticker_info.get('longBusinessSummary', default_str),
                                     website=ticker_info.get('website', default_str),
-                                    exchange=ticker_info.get('exchange', default_str))
+                                    exchange=capital_letter_no_blanks(ticker_info.get('exchange', default_str)))
             underlying_list.append(underlying)
             counter += 1
         logger.debug('Append {} row(s) to the Underlying table in the database.'.format(len(underlying_list)))
@@ -1009,9 +1009,9 @@ class ExcelFeeder(_DataFeeder):
         underlying_list = []
         for ticker in ticker_list:
             underlying = Underlying(ticker=ticker,
-                                    underlying_type=underlying_df['underlying_type'].values[0].upper(),
-                                    long_name=underlying_df['long_name'].values[0],
-                                    short_name=underlying_df['short_name'].values[0],
+                                    underlying_type=capital_letter_no_blanks(underlying_df['underlying_type'].values[0]),
+                                    long_name=capital_letter_no_blanks(underlying_df['long_name'].values[0]),
+                                    short_name=capital_letter_no_blanks(underlying_df['short_name'].values[0]),
                                     sector=capital_letter_no_blanks(underlying_df['sector'].values[0]),
                                     industry=capital_letter_no_blanks(underlying_df['industry'].values[0]),
                                     currency=capital_letter_no_blanks(underlying_df['currency'].values[0]),
@@ -1020,7 +1020,7 @@ class ExcelFeeder(_DataFeeder):
                                     address=underlying_df['address'].values[0],
                                     description=underlying_df['description'].values[0],
                                     website=underlying_df['website'].values[0],
-                                    exchange=underlying_df['exchange'].values[0])
+                                    exchange=capital_letter_no_blanks(underlying_df['exchange'].values[0]))
             underlying_list.append(underlying)
         logger.debug('Append {} row(s) to the Underlying table in the database.'.format(len(underlying_list)))
         self.session.add_all(underlying_list)
@@ -1089,18 +1089,18 @@ class BloombergFeeder(_DataFeeder):
         for ticker in bbg_ticker_list:
             progression_bar(counter + 1, underlying_info.shape[0])
             underlying = Underlying(ticker=ticker_list[counter],
-                                    underlying_type=underlying_info.loc[ticker, 'SECURITY_TYP2'].upper(),
-                                    long_name=underlying_info.loc[ticker, 'SECURITY_NAME'],
-                                    short_name=underlying_info.loc[ticker, 'SHORT_NAME'],
-                                    sector=underlying_info.loc[ticker, 'GICS_SECTOR_NAME'].upper().replace(' ', '_'),
-                                    industry=underlying_info.loc[ticker, 'GICS_INDUSTRY_NAME'].upper().replace(' ', '_'),
-                                    country=underlying_info.loc[ticker, 'COUNTRY_FULL_NAME'].upper().replace(' ', '_'),
-                                    city=underlying_info.loc[ticker, 'CITY_OF_DOMICILE'].upper().replace(' ', '_'),
+                                    underlying_type=capital_letter_no_blanks(underlying_info.loc[ticker, 'SECURITY_TYP2']),
+                                    long_name=capital_letter_no_blanks(underlying_info.loc[ticker, 'SECURITY_NAME']),
+                                    short_name=capital_letter_no_blanks(underlying_info.loc[ticker, 'SHORT_NAME']),
+                                    sector=capital_letter_no_blanks(underlying_info.loc[ticker, 'GICS_SECTOR_NAME']),
+                                    industry=capital_letter_no_blanks(underlying_info.loc[ticker, 'GICS_INDUSTRY_NAME']),
+                                    country=capital_letter_no_blanks(underlying_info.loc[ticker, 'COUNTRY_FULL_NAME']),
+                                    city=capital_letter_no_blanks(underlying_info.loc[ticker, 'CITY_OF_DOMICILE']),
                                     address=default_str,
                                     currency=underlying_info.loc[ticker, 'CRNCY'].upper().replace(' ', '_'),
                                     description=underlying_info.loc[ticker, 'CIE_DES'],
                                     website=underlying_info.loc[ticker, 'COMPANY_WEB_ADDRESS'],
-                                    exchange=underlying_info.loc[ticker, 'EXCH_CODE'].upper().replace(' ', '_'))
+                                    exchange=capital_letter_no_blanks(underlying_info.loc[ticker, 'EXCH_CODE']))
             underlying_list.append(underlying)
             counter += 1
         logger.debug('Append {} row(s) to the Underlying table in the database.'.format(len(underlying_list)))

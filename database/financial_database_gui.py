@@ -296,7 +296,12 @@ class AttributeFilterInputWindow(_InputWindow):
         self.attribute_combo = Combobox(frame)
         attribute_list = Underlying.__table__.columns.keys()
         # remove attributes that we can't use in the current setup
-        eligible_attribute_list = list(set(attribute_list).difference(('description', 'first_ex_div_date', 'latest_observation_date', 'latest_observation_date_with_values', 'oldest_observation_date')))
+        eligible_attribute_list = list(
+            set(attribute_list).difference(
+                ('description', 'first_ex_div_date', 'latest_observation_date', 'latest_observation_date_with_values',
+                 'oldest_observation_date', 'id', 'ticker', 'has_dividend_history', 'address', 'website')
+            )
+        )
         eligible_attribute_list.sort()
         self.attribute_combo['values'] = eligible_attribute_list
         self.attribute_combo.grid(row=0, column=1)
