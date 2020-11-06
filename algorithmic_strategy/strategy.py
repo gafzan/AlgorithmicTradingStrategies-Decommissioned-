@@ -8,10 +8,10 @@ import logging
 
 # my modules
 from database.financial_database import FinancialDatabase
-from database.config_database import my_database_name
+from database.config_database import __MY_DATABASE_NAME__
 from algorithmic_strategy.investment_universe import InvestmentUniverse
 from dataframe_tools import merge_two_dataframes_as_of
-from algorithmic_strategy import strategy_weight, strategy_signal, strategy_weight_adjustments
+from algorithmic_strategy import strategy_weight, strategy_signal, strategy_overlay
 
 # Logger
 logger = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ class Basket:
     def basket_prices(self, start_date: {date, datetime}=None, end_date: {date, datetime}=None,
                       forward_fill_na: bool = True):
         logger.debug('Get basket price.')
-        financial_database_handler = FinancialDatabase(my_database_name, False)
+        financial_database_handler = FinancialDatabase(__MY_DATABASE_NAME__, False)
         tickers = self.investment_universe.get_eligible_tickers()
         if self.total_return:
             price = financial_database_handler.get_total_return_df(tickers, start_date, end_date, self.dividend_tax,
@@ -71,10 +71,10 @@ class Basket:
 class Index(Basket):
     """Class definition of Index"""
 
-    def __init__(self, investment_universe: InvestmentUniverse, signal=None, weight=None, weight_modifier=None, index_fee: float = 0.0,
+    def __init__(self, investment_universe: InvestmentUniverse, signal=None, weight=None, overlay=None, index_fee: float = 0.0,
                  transaction_cost: float = 0.0, currency: str = None, total_return: bool = False,
                  dividend_tax: float = 0.0, observation_calendar: pd.DatetimeIndex = None, initial_value: float = 100.0,
-                 strategy_weight_smoothing: int = 1, weight_observation_lag: int = 2):
+                 strategy_weight_smoothing: int = 1, weight_observation_lag: int = 2, signal_accumulation_method: str = None):
         super().__init__(investment_universe=investment_universe, currency=currency, total_return=total_return,
                          dividend_tax=dividend_tax)
         self.signal = signal
@@ -85,21 +85,22 @@ class Index(Basket):
         self.observation_calendar = observation_calendar
         self.weight_observation_lag = weight_observation_lag
         self.strategy_weight_smoothing = strategy_weight_smoothing
-
-        self.weight_modifier = weight_modifier
+        self.overlay = overlay
+        self._eligible_signal_accumulation_methods = ['union', 'intersection']
+        self.signal_accumulation_method = signal_accumulation_method
 
     def _apply_weight_modifier(self, daily_return_df: pd.DataFrame, daily_weight_df: pd.DataFrame):
 
-        if self.weight_modifier is None:
+        if self.overlay is None:
             pass
-        elif isinstance(self.weight_modifier, list):
+        elif isinstance(self.overlay, list):
             # apply each weight overlays
-            for weight_overlay in self.weight_modifier:
+            for weight_overlay in self.overlay:
                 daily_return_df, daily_weight_df = weight_overlay.get_return_weight_tuple_after_scaling(
                     multivariate_daily_return_df=daily_return_df,
                     multivariate_daily_weight_df=daily_weight_df)
         else:
-            daily_return_df, daily_weight_df = self.weight_modifier.get_return_weight_tuple_after_scaling(multivariate_daily_return_df=daily_return_df, multivariate_daily_weight_df=daily_weight_df)
+            daily_return_df, daily_weight_df = self.overlay.get_return_weight_tuple_after_scaling(multivariate_daily_return_df=daily_return_df, multivariate_daily_weight_df=daily_weight_df)
         return daily_return_df, daily_weight_df
 
     def get_back_test(self, end_date: datetime = None, drop_nan: bool = True) -> pd.DataFrame:
@@ -117,7 +118,7 @@ class Index(Basket):
         daily_weight = merge_two_dataframes_as_of(pd.DataFrame(index=price_df.index), weight_df)
         daily_weight = daily_weight.rolling(window=self.strategy_weight_smoothing, min_periods=1).mean()
 
-        # apply the weight adjustments (volatility target and Beta hedge etc.)
+        # apply the overlay adjustments (e.g. volatility target)
         daily_returns, daily_weight = self._apply_weight_modifier(daily_return_df=daily_returns, daily_weight_df=daily_weight)
 
         # TODO need to check if the weight obs lag is ok
@@ -155,6 +156,8 @@ class Index(Basket):
         index_result_df.iloc[start_of_index_i, :] = 1.0  # start at 1.0
         index_result_df *= self.initial_value  # scale the index by the initial value
         index_result_df.columns = [col_name]
+
+        # clean results if applicable
         if drop_nan:
             index_result_df.dropna(inplace=True)
         return index_result_df
@@ -171,8 +174,25 @@ class Index(Basket):
         if self.dividend_tax:
             index_desc_df.loc['Dividend tax:'] = str(round(100 * self.dividend_tax, 2)) + '%'
         if self.signal is not None:
-            index_desc_df.loc['Signal:'] = type(self.signal).__name__ + ' (' + self.signal.get_desc() + ')'
+            if isinstance(self.signal, list):
+                index_desc_df.loc['Signal accumulation method:'] = self.signal_accumulation_method + ' of all signals'
+                signal_counter = 1
+                for signal in self.signal:
+                    index_desc_df.loc['Signal ({}/{}):'.format(signal_counter, len(self.signal))] = type(signal).__name__ + ' (' + signal.get_desc() + ')'
+                    signal_counter += 1
+            else:
+                index_desc_df.loc['Signal:'] = type(self.signal).__name__ + ' (' + self.signal.get_desc() + ')'
+        # if self.signal is not None:
+        #     index_desc_df.loc['Signal:'] = type(self.signal).__name__ + ' (' + self.signal.get_desc() + ')'
         index_desc_df.loc['Weight:'] = type(self.weight).__name__ + ' (' + self.weight.get_weight_desc() + ')'
+        if self.overlay is not None:
+            if isinstance(self.overlay, list):
+                overlay_counter = 1
+                for overlay in self.overlay:
+                    index_desc_df.loc['Overlay ({}/{}):'.format(overlay_counter, len(self.overlay))] = type(overlay).__name__ + ' (' + overlay.get_desc() + ')'
+                    overlay_counter += 1
+            else:
+                index_desc_df.loc['Overlay:'] = type(self.overlay).__name__ + ' (' + self.overlay.get_desc() + ')'
         index_desc_df.loc['Index fee p.a.:'] = str(round(100 * self.index_fee, 2)) + '%'
         index_desc_df.loc['Transaction costs:'] = str(round(100 * self.transaction_cost, 2)) + '%'
         if self.strategy_weight_smoothing > 1:
@@ -194,9 +214,41 @@ class Index(Basket):
         eligibility_df = self._get_eligibility_df()
         if self.signal is None:
             return strategy_signal.Signal(eligibility_df=eligibility_df).get_signal()
+        elif isinstance(self.signal, list):
+            # calculate the accumulative signal
+            return self._get_accumulated_signal(eligibility_df)
         else:
             self.signal.eligibility_df = eligibility_df
             return self.signal.get_signal()
+
+    def _get_accumulated_signal(self, eligibility_df: pd.DataFrame):
+        """
+        Depending on the class attribute signal_accumulation_method return a signal DataFrame that is either the union
+        or intersection
+        :param eligibility_df:
+        :return: pd.DataFrame
+        """
+        # check the aggregator method
+        accumulated_signal = None
+        if self.signal_accumulation_method is None:
+            raise ValueError('signal_accumulation_method is not specified')
+        elif self.signal_accumulation_method.lower() == self._eligible_signal_accumulation_methods[0]:
+            # take the union of the signals by looking at the maximum signal value
+            for signal in self.signal:
+                signal.eligibility_df = eligibility_df
+                if accumulated_signal is None:
+                    accumulated_signal = signal.get_signal()
+                else:
+                    accumulated_signal = pd.concat([accumulated_signal, signal.get_signal()]).max(level=0)
+        elif self.signal_accumulation_method.lower() == self._eligible_signal_accumulation_methods[1]:
+            # take the intersection/product of the signal by updating the eligibility DataFrame for each signal
+            for signal in self.signal:
+                signal.eligibility_df = eligibility_df
+                if accumulated_signal is None:
+                    accumulated_signal = signal.get_signal()
+                else:
+                    accumulated_signal *= signal.get_signal().values
+        return accumulated_signal
 
     def get_desc(self):
         return super().get_desc()
@@ -211,7 +263,8 @@ class Index(Basket):
     def signal(self, signal):
         if signal is None:
             self._signal = None
-        elif issubclass(type(signal), strategy_signal.Signal) or isinstance(signal, strategy_signal.Signal):
+        elif issubclass(type(signal), strategy_signal.Signal) or isinstance(signal, strategy_signal.Signal) \
+                or isinstance(signal, list):
             self._signal = signal
         else:
             raise ValueError('Needs to be of type that is a subclass of _Signal.')
@@ -230,17 +283,17 @@ class Index(Basket):
             raise ValueError('Needs to be of type that is a subclass of Weight.')
 
     @property
-    def weight_modifier(self):
+    def overlay(self):
         return self._weight_modifier
 
-    @weight_modifier.setter
-    def weight_modifier(self, weight_modifier):
+    @overlay.setter
+    def overlay(self, weight_modifier):
         if weight_modifier is None:
             self._weight_modifier = None
-        elif issubclass(type(weight_modifier), strategy_weight_adjustments._WeightAdjustment):
+        elif issubclass(type(weight_modifier), strategy_overlay._Overlay):
             self._weight_modifier = weight_modifier
         elif isinstance(weight_modifier, list):
-            if all(issubclass(type(w_mod), strategy_weight_adjustments._WeightAdjustment) for w_mod in weight_modifier):
+            if all(issubclass(type(w_mod), strategy_overlay._Overlay) for w_mod in weight_modifier):
                 self._weight_modifier = weight_modifier
             else:
                 raise ValueError('All elements in the weight_modifier list is not a subclass of _WeightAdjustment')
@@ -317,27 +370,68 @@ class Index(Basket):
             raise ValueError('strategy_weight_smoothing needs to be an int larger or equal to 1.')
         self._strategy_weight_smoothing = strategy_weight_smoothing
 
+    @property
+    def signal_accumulation_method(self):
+        return self._signal_accumulation_method
+
+    @signal_accumulation_method.setter
+    def signal_accumulation_method(self, signal_accumulation_method: str):
+        if signal_accumulation_method is None:
+            self._signal_accumulation_method = None
+        elif signal_accumulation_method.lower() in self._eligible_signal_accumulation_methods:
+            self._signal_accumulation_method = signal_accumulation_method.lower()
+        else:
+            raise ValueError("signal_accumulation_method needs to be equal to '%s'" % "' or '".join(self._eligible_signal_accumulation_methods))
+
 
 def main():
 
     tickers = ['spy', 'bnd', 'govt', 'vwo']
     from algorithmic_strategy.investment_universe import InvestmentUniverse
+    from excel_tools import save_df, format_risk_return_analysis_workbook
+    from financial_analysis.finance_tools import return_and_risk_analysis
+    from database.config_database import __BACK_TEST_FOLDER__
     obs_cal = pd.date_range('2012', '2019', freq='3M')
+    save_back_test = True
 
     inv_uni = InvestmentUniverse(tickers, observation_calendar=obs_cal)
     inv_uni.apply_published_close_price_filter(max_number_days_since_publishing=5)
-    perf_signal = strategy_signal.PerformanceRankSignal(30, rank_number=3)
+    perf_signal = strategy_signal.PerformanceRankSignal(60, rank_number=1)
+    low_perf_signal = strategy_signal.PerformanceRankSignal(20, descending=False, rank_number=1)
     eqw = strategy_weight.EqualWeight()
 
-    vt_overlay = strategy_weight_adjustments.VolatilityControl(vol_control_level=0.05, vol_lag=20)
-    beta_overlay = strategy_weight_adjustments.BetaHedge('vt', beta_lag=50)
+    vt_overlay = strategy_overlay.VolatilityControl(vol_control_level=0.05, vol_lag=20)
+    beta_overlay = strategy_overlay.BetaHedge('vt', beta_lag=50)
 
-    momentum_index = Index(investment_universe=inv_uni, signal=perf_signal, weight=eqw, weight_observation_lag=2,
-                           transaction_cost=0.0, index_fee=0.0, weight_modifier=[beta_overlay, vt_overlay])
+    momentum_index = Index(investment_universe=inv_uni,
+                           signal=[perf_signal, low_perf_signal],
+                           weight=eqw,
+                           weight_observation_lag=2,
+                           transaction_cost=0.001,
+                           index_fee=0.005,
+                           overlay=[beta_overlay, vt_overlay],
+                           signal_accumulation_method='union'
+                           )
 
-    result = momentum_index.get_back_test()
-    result.to_clipboard()
-    print(momentum_index)
+    momentum_index.get_weight().to_clipboard()
+
+    performance_data = {'Description': momentum_index.get_index_desc_df()}
+    performance_data.update(
+        return_and_risk_analysis(
+            underlying_price_df=momentum_index.get_back_test(),
+            print_results=True
+        )
+    )
+
+    if save_back_test:
+        file_path = __BACK_TEST_FOLDER__ + '\\TEST2.xlsx'
+        save_df(
+            df_list=list(performance_data.values()),
+            sheet_name_list=list(performance_data.keys()),
+            full_path=file_path
+        )
+
+        format_risk_return_analysis_workbook(file_path)
 
 
 if __name__ == '__main__':
