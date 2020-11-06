@@ -16,7 +16,7 @@ import xlrd
 from database.models_db import Base, Underlying, OpenPrice, HighPrice, LowPrice, ClosePrice, Volume, Dividend
 from general_tools import capital_letter_no_blanks, list_grouper, extend_dict, reverse_dict, progression_bar
 from dataframe_tools import select_rows_from_dataframe_based_on_sub_calendar
-from database.config_database import my_database_name, excel_files_to_feed_database_folder
+from database.config_database import __MY_DATABASE_NAME__, __DATABASE_FEED_EXCEL_FILES_FOLDER__
 from excel_tools import load_df
 from database.bloomberg import BloombergConnection
 
@@ -1231,14 +1231,14 @@ def logger_time_interval_message(start_date: {date, datetime}, end_date: {date, 
 
 
 def main():
-    init_dir = excel_files_to_feed_database_folder
-    excel_db = ExcelFeeder(my_database_name, init_dir)
+    init_dir = __DATABASE_FEED_EXCEL_FILES_FOLDER__
+    excel_db = ExcelFeeder(__MY_DATABASE_NAME__, init_dir)
     excel_db.load_data_from_excel()
     excel_db.insert_data_to_database()
 
 
 def add_futures():
-    bbg_fin_db = BloombergFeeder(my_database_name, bbg_echo=False)
+    bbg_fin_db = BloombergFeeder(__MY_DATABASE_NAME__, bbg_echo=False)
     generic_futures_ticker = 'GC1 COMDTY'
     futures_tickers = bbg_fin_db.bbg_con.get_futures_chain(generic_futures_ticker)
     bbg_fin_db.add_underlying(futures_tickers)
