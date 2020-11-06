@@ -12,7 +12,7 @@ import logging
 
 from database.models_db import Underlying
 from database.financial_database import YahooFinanceFeeder, BloombergFeeder, FinancialDatabase
-from database.config_database import my_database_name, excel_ticker_folder, data_request_folder
+from database.config_database import __MY_DATABASE_NAME__, __EXCEL_TICKER_FOLDER__, __DATA_REQUEST_FOLDER__
 from excel_tools import save_df, format_requested_data_workbook
 from general_tools import list_grouper, progression_bar
 
@@ -122,16 +122,18 @@ class _InputWindow(Toplevel):
 
             data_source = self.parent.data_source_combo.get()
             # initialize a database handler used to add and refresh data
+            batch_size = None
             if data_source == data_source_list[0]:
-                fin_db = YahooFinanceFeeder(my_database_name)
+                batch_size = 15
+                fin_db = YahooFinanceFeeder(__MY_DATABASE_NAME__)
             elif data_source == data_source_list[1]:
-                fin_db = BloombergFeeder(my_database_name, bbg_echo=False)
+                batch_size = 100
+                fin_db = BloombergFeeder(__MY_DATABASE_NAME__, bbg_echo=False)
             else:
-                fin_db = FinancialDatabase(my_database_name)
+                fin_db = FinancialDatabase(__MY_DATABASE_NAME__)
 
             if action == 'Add underlying':
                 counter = 1
-                batch_size = 15
                 list_of_ticker_list = list_grouper(self.result, batch_size)
                 tickers_not_available = []
                 for ticker_sub_list in list_of_ticker_list:
@@ -218,7 +220,7 @@ class ManualInputWindow(_InputWindow):
 class ExcelInputWindow(_InputWindow):
     """Class definition of ExcelInputWindow subclass of _InputWindow"""
     def __init__(self, parent=None, title: str = None):
-        self.result_df = self.select_file_get_df(excel_ticker_folder)
+        self.result_df = self.select_file_get_df(__EXCEL_TICKER_FOLDER__)
         self.string_var = StringVar()
         super().__init__(parent, title)
 
@@ -366,7 +368,7 @@ class AttributeFilterInputWindow(_InputWindow):
                 return
         else:
             pass
-        fin_db_handler = FinancialDatabase(my_database_name)
+        fin_db_handler = FinancialDatabase(__MY_DATABASE_NAME__)
         tickers = fin_db_handler.get_ticker(self.filter_dict)
         self.result = tickers
         self.cancel()
@@ -427,7 +429,7 @@ class DataRetrievalWindow(_InputWindow):
             msg.showinfo('Warning', "There is no data to save.")
             return
         else:
-            file_name = filedialog.asksaveasfile(mode='w', initialdir=data_request_folder, title='Save requested data.',
+            file_name = filedialog.asksaveasfile(mode='w', initialdir=__DATA_REQUEST_FOLDER__, title='Save requested data.',
                                                  defaultextension='.xlsx').name
             logger.info("Saving data to excel workbook...")
             save_df(list(self.result_df_dict.values()), full_path=file_name, sheet_name_list=list(self.result_df_dict.keys()))
@@ -463,7 +465,7 @@ class UnderlyingDataWindow(DataRetrievalWindow):
     def get_underlying_data(self):
         if any(selected_var.get() == 1 for selected_var in self.int_vars):
             chosen_attributes = [attribute for i, attribute in enumerate(self.attribute_list) if self.int_vars[i].get()]
-            fin_db = FinancialDatabase(my_database_name)
+            fin_db = FinancialDatabase(__MY_DATABASE_NAME__)
             result_df = fin_db.get_underlying_data(self.ticker_list, chosen_attributes)
             self.parent.result_df_dict.update({'underlying_data': result_df})
             logger.info('Done with loading underlying data!')
@@ -540,7 +542,7 @@ class OpenPriceDataWindow(DailyDataWindow):
             return self.currency_entry.get()
 
     def get_open_price(self):
-        fin_db = FinancialDatabase(my_database_name)
+        fin_db = FinancialDatabase(__MY_DATABASE_NAME__)
         price_info = ''
         if self.get_currency() is not None:
             price_info += '_' + self.get_currency().upper()
@@ -571,7 +573,7 @@ class HighPriceDataWindow(DailyDataWindow):
             return self.currency_entry.get()
 
     def get_high_price(self):
-        fin_db = FinancialDatabase(my_database_name)
+        fin_db = FinancialDatabase(__MY_DATABASE_NAME__)
         price_info = ''
         if self.get_currency() is not None:
             price_info += '_' + self.get_currency().upper()
@@ -602,7 +604,7 @@ class LowPriceDataWindow(DailyDataWindow):
             return self.currency_entry.get()
 
     def get_low_price(self):
-        fin_db = FinancialDatabase(my_database_name)
+        fin_db = FinancialDatabase(__MY_DATABASE_NAME__)
         price_info = ''
         if self.get_currency() is not None:
             price_info += '_' + self.get_currency().upper()
@@ -655,7 +657,7 @@ class ClosePriceDataWindow(DailyDataWindow):
             return int(self.div_tax_entry.get()) / 100
 
     def get_price(self):
-        fin_db = FinancialDatabase(my_database_name)
+        fin_db = FinancialDatabase(__MY_DATABASE_NAME__)
         price_info = ''
         if self.get_currency() is not None:
             price_info += '_' + self.get_currency().upper()
@@ -684,7 +686,7 @@ class VolumeDataWindow(DailyDataWindow):
         Button(self, text='Get volume', fg='green', command=self.get_volume).grid(row=4, columnspan=2)
 
     def get_volume(self):
-        fin_db = FinancialDatabase(my_database_name)
+        fin_db = FinancialDatabase(__MY_DATABASE_NAME__)
         result_df = fin_db.get_volume_df(tickers=self.ticker_list, start_date=self.get_start_date(), end_date=self.get_end_date())
         result_df = self.handle_nan_df(result_df)
         self.parent.result_df_dict.update({'volume': result_df})
@@ -710,7 +712,7 @@ class LiquidityDataWindow(DailyDataWindow):
             return self.currency_entry.get()
 
     def get_liquidity(self):
-        fin_db = FinancialDatabase(my_database_name)
+        fin_db = FinancialDatabase(__MY_DATABASE_NAME__)
         price_info = ''
         if self.get_currency() is not None:
             price_info += '_' + self.get_currency().upper()
@@ -741,7 +743,7 @@ class DividendDataWindow(DailyDataWindow):
             return self.currency_entry.get()
 
     def get_dividend(self):
-        fin_db = FinancialDatabase(my_database_name)
+        fin_db = FinancialDatabase(__MY_DATABASE_NAME__)
         price_info = ''
         if self.get_currency() is not None:
             price_info += '_' + self.get_currency().upper()
