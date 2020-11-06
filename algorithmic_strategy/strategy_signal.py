@@ -9,7 +9,7 @@ import numpy as np
 
 # my modules
 from database.financial_database import FinancialDatabase
-from database.config_database import my_database_name
+from database.config_database import __MY_DATABASE_NAME__
 from financial_analysis.finance_tools import rolling_average, realized_volatility
 from dataframe_tools import merge_two_dataframes_as_of
 
@@ -170,7 +170,7 @@ class _FinancialDatabaseDependentSignal(Signal):
     def __init__(self, tickers: {str, list}, observation_calendar: pd.DatetimeIndex,
                  eligibility_df: pd.DataFrame):
         Signal.__init__(self, tickers=tickers, observation_calendar=observation_calendar, eligibility_df=eligibility_df)
-        self._financial_database_handler = FinancialDatabase(my_database_name)
+        self._financial_database_handler = FinancialDatabase(__MY_DATABASE_NAME__)
 
     # ------------------------------------------------------------------------------------------------------------------
     # get and setter methods
