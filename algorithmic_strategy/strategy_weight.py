@@ -10,7 +10,7 @@ import logging
 
 # my modules
 from database.financial_database import FinancialDatabase
-from database.config_database import my_database_name
+from database.config_database import __MY_DATABASE_NAME__
 from dataframe_tools import merge_two_dataframes_as_of
 from financial_analysis.finance_tools import realized_volatility
 from financial_analysis.financial_optimizers import theoretical_minimum_variance_portfolio_weights, \
@@ -126,7 +126,7 @@ class _FinancialDatabaseDependentWeight(Weight):
                  min_instrument_weight: {float, None}):
         Weight.__init__(self, signal_df=signal_df, max_instrument_weight=max_instrument_weight,
                         min_instrument_weight=min_instrument_weight)
-        self._financial_database_handler = FinancialDatabase(my_database_name)
+        self._financial_database_handler = FinancialDatabase(__MY_DATABASE_NAME__)
 
     # ------------------------------------------------------------------------------------------------------------------
     # get and setter methods
