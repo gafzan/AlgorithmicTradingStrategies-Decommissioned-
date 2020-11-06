@@ -332,7 +332,7 @@ class VolatilityRankSignal(_PriceBasedRankSignal):
 
 class PerformanceRankSignal(_PriceBasedRankSignal):
     """Class definition of VolatilityRankSignal. Subclass of _PriceBasedRankSignal."""
-    def __init__(self, performance_observation_period: int, rank_number: int = None, rank_fraction: float = None,
+    def __init__(self, performance_observation_period: {int, list}, rank_number: int = None, rank_fraction: float = None,
                  descending: bool = True, include: bool = True, tickers: {str, list}=None, observation_calendar: pd.DatetimeIndex = None,
                  eligibility_df: pd.DataFrame = None, total_return: bool = False, currency: str = None, price_obs_freq: {str, int}=None,
                  winsorizing_number: int = None, winsorizing_fraction: float = None):
@@ -341,12 +341,28 @@ class PerformanceRankSignal(_PriceBasedRankSignal):
                          rank_number=rank_number, rank_fraction=rank_fraction, descending=descending, include=include,
                          winsorizing_number=winsorizing_number, winsorizing_fraction=winsorizing_fraction)
         self.performance_observation_period = performance_observation_period
-        self._observation_buffer = performance_observation_period + 10
+        if isinstance(performance_observation_period, int):
+            self._observation_buffer = performance_observation_period + 10
+        else:
+            self._observation_buffer = max(performance_observation_period) + 10
 
     def _get_dataframe_to_be_ranked(self):
         price = self._get_price_df()
-        performance = price.pct_change(self.performance_observation_period)
-        return performance
+        if isinstance(self.performance_observation_period, int):
+            perf_obs_period_list = [self.performance_observation_period]
+        else:
+            perf_obs_period_list = self.performance_observation_period.copy()
+
+        # calculate the average performance over each observation period
+        performance_sum = None
+        for perf_obs_period in perf_obs_period_list:
+            if performance_sum is None:
+                performance_sum = price.pct_change(perf_obs_period)
+            else:
+                performance_sum = pd.concat(
+                    [performance_sum, price.pct_change(perf_obs_period)]
+                ).sum(level=0, skipna=False)
+        return performance_sum / len(perf_obs_period_list)
 
     # ------------------------------------------------------------------------------------------------------------------
     # get and setter methods
@@ -355,10 +371,13 @@ class PerformanceRankSignal(_PriceBasedRankSignal):
         return self._performance_observation_period
 
     @performance_observation_period.setter
-    def performance_observation_period(self, performance_observation_period: int):
-        if performance_observation_period >= 1:
-            self._performance_observation_period = performance_observation_period
-        else:
+    def performance_observation_period(self, performance_observation_period: {int, list}):
+        if isinstance(performance_observation_period, int):
+            performance_observation_period = [performance_observation_period]
+        if any(per_obs < 1 for per_obs in performance_observation_period):
             raise ValueError('performance_observation_period needs to be an integer larger or equal to 1.')
+        else:
+            self._performance_observation_period = performance_observation_period
+
 
 
