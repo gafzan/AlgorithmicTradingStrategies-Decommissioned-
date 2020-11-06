@@ -15,7 +15,7 @@ from sqlalchemy import and_, or_
 # my modules
 from database.financial_database import FinancialDatabase
 from database.models_db import Underlying
-from database.config_database import my_database_name
+from database.config_database import __MY_DATABASE_NAME__
 
 # Logger
 logger = logging.getLogger(__name__)
@@ -86,7 +86,7 @@ def get_investment_universe(underlying_code: str, month_codes: list, start_date:
     contract_codes = [underlying_code.upper() + month_code.upper() for month_code in month_codes]
 
     # find eligible futures contracts in the database by filtering based on dates and contract codes
-    fin_db = FinancialDatabase(my_database_name)
+    fin_db = FinancialDatabase(__MY_DATABASE_NAME__)
     query_futures_tickers = fin_db.session.query(
         Underlying.ticker
     ).filter(
@@ -106,7 +106,7 @@ def get_investment_universe(underlying_code: str, month_codes: list, start_date:
     futures_tickers = [tup[0] for tup in query_futures_tickers]
     if not len(futures_tickers):
         raise ValueError('No tickers could be found in the database.\nDatabase: {}\nUnderlying code: {}\nMonth code: %s'
-                         .format(my_database_name, underlying_code.upper()) % ', '.join(month_codes))
+                         .format(__MY_DATABASE_NAME__, underlying_code.upper()) % ', '.join(month_codes))
     return futures_tickers
 
 
@@ -116,7 +116,7 @@ def get_expiry_date_dict(tickers: list) -> dict:
     :param tickers: list of strings
     :return: dictionary
     """
-    fin_db = FinancialDatabase(my_database_name)
+    fin_db = FinancialDatabase(__MY_DATABASE_NAME__)
     asset_class = fin_db.get_ticker_underlying_attribute_dict(tickers, Underlying.underlying_type)
     desc = fin_db.get_ticker_underlying_attribute_dict(tickers, Underlying.description)
     result_dict = {}
@@ -286,7 +286,7 @@ def get_futures_daily_close_data(tickers: list, start_date: datetime = None, end
     :return: DataFrame
     """
     # get the raw data from the financial database
-    fin_db = FinancialDatabase(my_database_name)
+    fin_db = FinancialDatabase(__MY_DATABASE_NAME__)
     raw_futures_data = fin_db.get_close_price_df(tickers, start_date, end_date)
 
     # clean the data by rolling N/A forward

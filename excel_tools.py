@@ -15,7 +15,7 @@ from openpyxl.utils import get_column_letter
 from tkinter import *
 from tkinter import filedialog
 from financial_analysis.finance_tools import return_and_risk_analysis
-from database.config_database import base_folder, back_test_folder
+from database.config_database import __BASE_FOLDER__, __BACK_TEST_FOLDER__
 
 # logger
 logger = logging.getLogger(__name__)
@@ -131,7 +131,7 @@ def load_df(workbook_name: str = None, folder_path: str = None, full_path: str =
 def load_df_from_chosen_excel_file(sheet_name='Sheet1', first_column_index: bool = True):
     # chose excel file to format
     Tk().withdraw()
-    excel_file_path = filedialog.askopenfile(initialdir=base_folder, title='Select excel file').name
+    excel_file_path = filedialog.askopenfile(initialdir=__BASE_FOLDER__, title='Select excel file').name
     return load_df(full_path=excel_file_path, sheet_name=sheet_name, first_column_index=first_column_index)
 
 
@@ -317,7 +317,7 @@ def format_excel_workbook_index_time_series():
     sheet_name_df_dict = return_and_risk_analysis(df, print_results=True, normalize=False)
 
     # save the result
-    save_file_path = filedialog.asksaveasfile(initialdir=back_test_folder, title='Save excel file',
+    save_file_path = filedialog.asksaveasfile(initialdir=__BACK_TEST_FOLDER__, title='Save excel file',
                                               filetypes=(("Excel files", "*.xlsx"), ("All files", "*.*"))).name
     save_file_path += '.xlsx'
     print(save_file_path)
@@ -331,7 +331,7 @@ def format_excel_workbook_index_time_series():
 def main():
     # chose excel file to format
     Tk().withdraw()
-    excel_file_path = filedialog.askopenfile(initialdir=base_folder, title='Select excel file to format').name
+    excel_file_path = filedialog.askopenfile(initialdir=__BASE_FOLDER__, title='Select excel file to format').name
 
     # get the underlying data
     format_requested_data_workbook(excel_file_path)

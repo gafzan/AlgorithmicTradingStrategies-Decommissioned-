@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from database.financial_database import BloombergFeeder
-from database.config_database import my_database_name
+from database.config_database import __MY_DATABASE_NAME__
 from financial_analysis.rolling_futures_index import __COMMODITY_BBG_UNDERLYING_CODE__, __ROLLING_MONTHS_COMMODITY_CODE__, get_investment_universe
 
 __ORDINAL_NUMBERS__ = {1: 'st', 2: 'nd', 3: 'rd'}
@@ -48,7 +48,7 @@ def main():
     start_date = datetime(2005, 1, 1)
     end_date = datetime(2020, 2, 1)
 
-    bbg_fin_db = BloombergFeeder(my_database_name)
+    bbg_fin_db = BloombergFeeder(__MY_DATABASE_NAME__)
     rolling_future_strategies = None  # the resulting time series for each commodity strategy gets saved here
 
     for com_symbol in commodity_symbols:
