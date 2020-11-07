@@ -341,28 +341,25 @@ class PerformanceRankSignal(_PriceBasedRankSignal):
                          rank_number=rank_number, rank_fraction=rank_fraction, descending=descending, include=include,
                          winsorizing_number=winsorizing_number, winsorizing_fraction=winsorizing_fraction)
         self.performance_observation_period = performance_observation_period
-        if isinstance(performance_observation_period, int):
-            self._observation_buffer = performance_observation_period + 10
-        else:
-            self._observation_buffer = max(performance_observation_period) + 10
+        self._observation_buffer = max(performance_observation_period) + 10
 
     def _get_dataframe_to_be_ranked(self):
+        return self._get_columnwise_avg_holding_period_returns()
+
+    def _get_columnwise_avg_holding_period_returns(self):
+        # download the price data
         price = self._get_price_df()
-        if isinstance(self.performance_observation_period, int):
-            perf_obs_period_list = [self.performance_observation_period]
-        else:
-            perf_obs_period_list = self.performance_observation_period.copy()
 
         # calculate the average performance over each observation period
         performance_sum = None
-        for perf_obs_period in perf_obs_period_list:
+        for perf_obs_period in self.performance_observation_period:
             if performance_sum is None:
                 performance_sum = price.pct_change(perf_obs_period)
             else:
                 performance_sum = pd.concat(
                     [performance_sum, price.pct_change(perf_obs_period)]
                 ).sum(level=0, skipna=False)
-        return performance_sum / len(perf_obs_period_list)
+        return performance_sum / len(self.performance_observation_period)
 
     # ------------------------------------------------------------------------------------------------------------------
     # get and setter methods
