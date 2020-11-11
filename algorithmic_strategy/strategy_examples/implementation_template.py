@@ -1,7 +1,7 @@
 """
-strategy_implementation.py
+implementation_template.py
 
-This can be seen as a algorithmic strategy back test implementation.
+This can be seen as a algorithmic strategy back test implementation template.
 
 1) Define your parameters
 
@@ -33,7 +33,7 @@ from database.config_database import __BACK_TEST_FOLDER__
 
 
 def get_tickers():
-    return ['SPY', 'BND']
+    return
 
 
 def main():
@@ -44,9 +44,9 @@ def main():
     volatility_target = 0.10  # used by a volatility target overlay
     volatility_target_obs_lag = 60  # used by a volatility target overlay
     index_name = 'My Index'
-    save_back_test_to_excel = True
+    save_back_test_to_excel = False
     print_performance_result = True
-    make_plot = True
+    make_plot = False
     tickers = get_tickers()
 
     # 2) setup the investment universe
@@ -59,7 +59,10 @@ def main():
     investment_universe.apply_close_price_history_filter(100)
 
     # 3) define the index components (signals, weight and overlays)
-    signal_component = None
+    signal_component = algo_signal.PerformanceRankSignal(
+        performance_observation_period=[40, 60],
+        rank_number=1
+    )
     weight_component = algo_weight.EqualWeight()
     overlay_component = algo_overlay.VolatilityControl(
         vol_control_level=volatility_target,
