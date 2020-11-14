@@ -19,7 +19,7 @@ from financial_analysis.financial_optimizers import theoretical_minimum_variance
 
 # Logger
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.WARNING)
+logger.setLevel(logging.DEBUG)
 formatter = logging.Formatter('%(asctime)s : %(module)s : %(funcName)s : %(message)s')
 stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
