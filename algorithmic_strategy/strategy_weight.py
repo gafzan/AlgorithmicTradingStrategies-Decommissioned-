@@ -16,6 +16,7 @@ from financial_analysis.finance_tools import realized_volatility
 from financial_analysis.financial_optimizers import theoretical_minimum_variance_portfolio_weights, \
     minimum_variance_portfolio_weights_with_constraints
 
+
 # Logger
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
@@ -45,7 +46,7 @@ class Weight:
 
     def _get_eligible_tickers_list(self):
         signal_df = self.signal_df.copy()
-        signal_df[~signal_df.isnull()] = 1  # set all non NaN to 1 (MWO are agnostic to initial strategy signals)
+        signal_df[~signal_df.isnull()] = 1
         eligible_tickers_list = [list(signal_df.iloc[i, :][signal_df.iloc[i, :] == 1].index)
                                  for i in range(signal_df.shape[0])]
         return eligible_tickers_list
@@ -94,7 +95,8 @@ class Weight:
 class EqualWeight(Weight):
     """Class definition of EqualWeight. Subclass of Weight."""
 
-    def __init__(self, signal_df: pd.DataFrame = None, net_zero_exposure: bool = False, max_instrument_weight: float = None,
+    def __init__(self, signal_df: pd.DataFrame = None, net_zero_exposure: bool = False,
+                 max_instrument_weight: float = None,
                  min_instrument_weight: float = None):
         """
         If net_zero_exposure is True the equal weighting is separately done for the long and short positions making the
@@ -106,7 +108,8 @@ class EqualWeight(Weight):
         :param max_instrument_weight: float
         :param min_instrument_weight: float
         """
-        super().__init__(signal_df=signal_df, max_instrument_weight=max_instrument_weight, min_instrument_weight=min_instrument_weight)
+        super().__init__(signal_df=signal_df, max_instrument_weight=max_instrument_weight,
+                         min_instrument_weight=min_instrument_weight)
         self.net_zero_exposure = net_zero_exposure
 
     def _calculate_weight(self):
@@ -142,7 +145,9 @@ class StaticWeight(Weight):
             # ask user to insert each weight corresponding to the values of the signal (except 0) for each ticker
             signal_weight_dict = {}
             for signal_value in signal_values_for_ticker:
-                msg = 'Enter weight(%) for {} (#{} of {} tickers) when signal = {}: '.format(ticker, counter + 1, self.signal_df.shape[0], signal_value)
+                msg = 'Enter weight(%) for {} (#{} of {} tickers) when signal = {}: '.format(ticker, counter + 1,
+                                                                                             self.signal_df.shape[0],
+                                                                                             signal_value)
                 weight_from_user = self.ask_user_for_weight(msg)
                 signal_weight_dict.update({signal_value: weight_from_user / 100})
             signal_weight_dict.update({np.nan: 0.0})
@@ -223,84 +228,195 @@ class _FinancialDatabaseDependentWeight(Weight):
 class _PriceBasedWeight(_FinancialDatabaseDependentWeight):
     """Class definition of _PriceBasedSignal. Subclass of _FinancialDatabaseDependentWeight."""
 
-    def __init__(self, signal_df: pd.DataFrame, total_return: bool, currency: str, price_obs_freq: {str, int},
-                 max_instrument_weight: {float, None}, min_instrument_weight: {float, None}):
-        _FinancialDatabaseDependentWeight.__init__(self, signal_df=signal_df, max_instrument_weight=max_instrument_weight,
+    def __init__(self, signal_df: pd.DataFrame, total_return: bool, currency: str, price_obs_freq: {str, int}, non_daily_price_obs: bool,
+                 observation_window: {int, list, None}, clean_data: bool, max_instrument_weight: {float, None}, min_instrument_weight: {float, None}):
+        _FinancialDatabaseDependentWeight.__init__(self, signal_df=signal_df,
+                                                   max_instrument_weight=max_instrument_weight,
                                                    min_instrument_weight=min_instrument_weight)
         self.total_return = total_return
         self.currency = currency
-        self._observation_buffer = None
         self._weekday_i_dict = {'mon': 0, 'monday': 0, 'tuesday': 1, 'tue': 1, 'wed': 2, 'wednesday': 2, 'thursday': 3,
                                 'thu': 4, 'friday': 5, 'fri': 5}
         self.price_obs_freq = price_obs_freq
+        self.non_daily_price_obs = non_daily_price_obs
+        self.observation_window = observation_window
+        self.clean_data = clean_data
 
     def _get_start_end_date(self):
+        """
+        Returns a tuple with the start and end dates used when downloading the underlying price. A buffer is added in
+        order to be able to observe enough prices to make the necessary calculations
+        :return: tuple
+        """
         if self.signal_df is None:
             raise ValueError('signal_df needs to be specified.')
-        if self._observation_buffer is None:
+        if self.observation_window is None:  # assumes you are starting at the oldest possible date
             return None, max(self.signal_df.index)
+        elif isinstance(self.observation_window, list):  # find the largest observation window
+            bday_shift = max(self.observation_window)
         else:
-            return min(self.signal_df.index) - BDay(self._observation_buffer), max(self.signal_df.index)
+            bday_shift = self.observation_window
 
-    def _get_price_df(self):
-        start_date, end_date = self._get_start_end_date()
-        if self.total_return:
-            price = self.financial_database_handler.get_total_return_df(list(self.signal_df), start_date, end_date,
-                                                                        0, self.currency)
-        else:
-            price = self.financial_database_handler.get_close_price_df(list(self.signal_df), start_date, end_date,
-                                                                       self.currency)
-        # filter out rows if you have specified certain observation intervals or weekdays
+        # increase the business day shift with the observation frequency
         if isinstance(self.price_obs_freq, str):
-            price = price[price.index.weekday == self._weekday_i_dict[self.price_obs_freq]]
-        elif isinstance(self.price_obs_freq, int):
-            # sort index in descending order. this is done to have the count start from the latest observation date
-            # TODO maybe don't start from the latest available date?
-            price = price.sort_index(ascending=False).iloc[::self.price_obs_freq, :].sort_index()
-        return price
+            bday_shift += 5  # assumes a weekly frequency
+        else:
+            bday_shift += self.price_obs_freq - 1
 
-    def _get_price_return_df(self, price_return_lag: int, set_nan_to_zero: bool = False, nan_ffill_drop: bool = False) -> pd.DataFrame:
+        # add a buffer equal to x1.25 of the original business day shift with a buffer
+        bday_shift += max(bday_shift * 0.25, 15)
+
+        # in case the price is only observed over a specific business day interval, adjust the shift accordingly
+        if isinstance(self.price_obs_freq, str):
+            bday_shift *= 5  # assumes weekly observations
+        elif self.non_daily_price_obs:
+            bday_shift *= self.price_obs_freq
+        return min(self.signal_df.index) - BDay(int(bday_shift)), max(self.signal_df.index)
+
+    def _get_raw_price_df(self) -> pd.DataFrame:
         """
-        retrieve the price data and calculate the price returns. returns are calculated based on prices with NaN are
-        'forward filled'. returns are removed where a price was NaN
+        Load the historical prices from a financial database. In case prices are observed in a non daily interval, roll
+        the latest available prices forward if applicable
         :return: pd.DataFrame
         """
-        multivariate_price_df = self._get_price_df()
+        # retrieve the appropriate start and end dates
+        start_date, end_date = self._get_start_end_date()
 
-        multivariate_return_df = multivariate_price_df.fillna(method='ffill').pct_change(price_return_lag)
-
-        if nan_ffill_drop:
-            multivariate_return_df.dropna(inplace=True)
+        # download the underlying price data
+        if self.total_return:
+            price = self.financial_database_handler.get_total_return_df(tickers=list(self.signal_df),
+                                                                        start_date=start_date, end_date=end_date,
+                                                                        withholding_tax=0, currency=self.currency)
         else:
-            nan_or_1 = multivariate_price_df.copy()
+            price = self.financial_database_handler.get_close_price_df(tickers=list(self.signal_df), start_date=start_date,
+                                                                       end_date=end_date, currency=self.currency)
+
+        # roll prices forward if applicable
+        if (self.price_obs_freq != 1 and self.non_daily_price_obs or isinstance(self.price_obs_freq, str)) and self.clean_data:
+            price = self._clean_price_df(raw_price_df=price, ffill=True, bfill=False)
+            price = self._filter_price_based_on_frequency(price_df=price)
+        return price
+
+    def _get_price_df(self):
+        """
+        Load the raw price and clean it up if applicable. Then filter prices based on the specified observation
+        frequency
+        :return: pd.DataFrame
+        """
+        price = self._get_raw_price_df()
+        if self.clean_data:
+            price = self._clean_price_df(raw_price_df=price, ffill=True, bfill=False)
+        if self.non_daily_price_obs or isinstance(self.price_obs_freq, str):
+            price = self._filter_price_based_on_frequency(price_df=price)
+        return price
+
+    def _get_price_return_df(self) -> pd.DataFrame:
+        """
+        Calculate the price returns based on the specified observation frequency
+        :return: pd.DataFrame
+        """
+        # get the price and calculate the return
+        raw_price_df = self._get_raw_price_df()
+        clean_price_df = self._clean_price_df(raw_price_df=raw_price_df, ffill=True, bfill=False)
+        if self.non_daily_price_obs or isinstance(self.price_obs_freq, str):
+            return_df = clean_price_df.pct_change()
+        else:
+            return_df = clean_price_df.pct_change(self.price_obs_freq)
+
+        # clean price return data if applicable
+        if self.clean_data:
+            # TODO too aggressive?
+            return_df.replace(np.nan, 0, inplace=True)
+        else:
+            # set to nan where the raw price equals nan
+            nan_or_1 = raw_price_df.copy()
             nan_or_1[~nan_or_1.isnull()] = 1  # set all non NaN to 1
-            multivariate_return_df *= nan_or_1.values
-        if set_nan_to_zero:
-            multivariate_return_df = multivariate_return_df.replace(np.nan, 0)
-        return multivariate_return_df
+            return_df *= nan_or_1.values
+        return return_df
 
-    def _get_price_return_df_list(self, eligible_tickers_list: list, price_return_lag: int, observation_window: int = None,
-                                  set_nan_to_zero: bool = False, nan_ffill_drop: bool = False):
-        obs_calendar = self.signal_df.index
-        num_obs_dates = len(obs_calendar)
-        # retrieve the price returns
-        multivariate_return_df = self._get_price_return_df(price_return_lag=price_return_lag,
-                                                           set_nan_to_zero=set_nan_to_zero,
-                                                           nan_ffill_drop=nan_ffill_drop)
+    def _get_price_df_list(self):
+        price_df = self._get_price_df()
+        return self._get_data_list(multivariate_df=price_df)
+
+    def _get_price_return_df_list(self):
+        price_return_df = self._get_price_return_df()
+        return self._get_data_list(multivariate_df=price_return_df)
+
+    def _get_data_list(self, multivariate_df: pd.DataFrame):
+        """
+        Returns a list of DataFrames. The ith DataFrame represents the data to be used for the signal observed on the
+        ith observation date of the ith set of eligible tickers
+        :param multivariate_df: pd.DataFrame
+        :return: list of pd.DataFrame
+        """
+
+        # each element (which is a list of str) in this list represents the tickers that has a defined signal for the
+        # ith observation date
+        eligible_tickers_list = self._get_eligible_tickers_list()
+
         # adjust the observation date to only include dates that exists in the price DataFrame
-        daily_calendar = multivariate_return_df.index
-        adj_obs_date_i_list = [daily_calendar.get_loc(obs_date, method='ffill')
-                               for obs_date in obs_calendar]
+        signal_obs_calendar = self.signal_df.index
+        data_obs_calendar = multivariate_df.index
+        adj_obs_date_i_list = [data_obs_calendar.get_loc(obs_date, method='ffill')
+                               for obs_date in signal_obs_calendar]
 
-        # create a list of price DataFrames to be used in the optimization
-        if observation_window is None:
-            return_df_list = [multivariate_return_df.iloc[:adj_obs_date_i_list[i] + 1, :][eligible_tickers_list[i]]
-                              for i in range(num_obs_dates)]
+        # this looks messy but all we are doing is to create a list of DataFrames where the column and row selection is
+        # dictated by the adjusted observation dates, eligible tickers and observation window
+        num_obs_dates = len(signal_obs_calendar)
+        if self.observation_window is None:
+            # use no lower limit for the observation (starting from the oldest available observation date)
+            df_list = [multivariate_df.iloc[:adj_obs_date_i_list[i] + 1, :][eligible_tickers_list[i]]
+                       for i in range(num_obs_dates)]
+        elif isinstance(self.observation_window, int):
+            df_list = [multivariate_df.iloc[adj_obs_date_i_list[i] - self.observation_window + 1:
+                                            adj_obs_date_i_list[i] + 1, :][eligible_tickers_list[i]]
+                       for i in range(num_obs_dates)]
         else:
-            return_df_list = [multivariate_return_df.iloc[adj_obs_date_i_list[i] - observation_window + 1:
-                                                          adj_obs_date_i_list[i] + 1, :][eligible_tickers_list[i]]
-                              for i in range(num_obs_dates)]
-        return return_df_list
+            raise ValueError('observation_window needs to be an int or None')
+        return df_list
+
+    def _filter_price_based_on_frequency(self, price_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Select prices based on a particular weekday (represented by a str) or a specific interval (int)
+        :param price_df: pd.DataFrame
+        :return: pd.DataFrame
+        """
+        # filter out rows if you have specified certain observation intervals or weekdays
+        if isinstance(self.price_obs_freq, str):
+            price_df = price_df[price_df.index.weekday == self._weekday_i_dict[self.price_obs_freq]]
+        elif isinstance(self.price_obs_freq, int):
+            # sort index in descending order. this is done to have the count start from the latest observation date
+            price_df = price_df.sort_index(ascending=False).iloc[::self.price_obs_freq, :].sort_index()
+        return price_df
+
+    def get_annualization_factor(self) -> float:
+        """
+        Calculate an annualization factor as the ratio of 252 and the return lag.
+        :return: float
+        """
+
+        if isinstance(self.price_obs_freq, str):
+            annualization_factor = 252 / 5
+        else:
+            annualization_factor = 252 / self.price_obs_freq
+        return annualization_factor
+
+    @staticmethod
+    def _clean_price_df(raw_price_df: pd.DataFrame, ffill: bool, bfill: bool):
+        """
+        Replaces nan with other available prices
+        :param raw_price_df: pd.DataFrame
+        :param ffill: bool -> if price is nan, replace it with the closest price available in the past
+        :param bfill: bool -> if price is nan, replace it with the closest price available in the future
+        :return:
+        """
+        clean_price_df = raw_price_df.copy()
+        if ffill:
+            clean_price_df.fillna(method='ffill', inplace=True)
+
+        if bfill:
+            clean_price_df.fillna(method='bfill', inplace=True)
+        return clean_price_df
 
     # ------------------------------------------------------------------------------------------------------------------
     # get and setter methods
@@ -315,10 +431,10 @@ class _PriceBasedWeight(_FinancialDatabaseDependentWeight):
         elif isinstance(price_obs_freq, int) and price_obs_freq >= 1:
             self._price_obs_freq = price_obs_freq
         elif price_obs_freq is None:
-            self._price_obs_freq = None
+            self._price_obs_freq = 1
         else:
-            raise ValueError('price_obs_freq needs an int larger or equal to 1 or a string equal to %s.'
-                             % ' or '.join(self._weekday_i_dict.keys()))
+            raise ValueError("price_obs_freq needs to be an int larger or equal to 1 or a string equal to '%s'."
+                             % "' or '".join(self._weekday_i_dict.keys()))
 
 
 class _PriceBasedProportionalWeight(_PriceBasedWeight, _ProportionalWeight):
@@ -326,10 +442,12 @@ class _PriceBasedProportionalWeight(_PriceBasedWeight, _ProportionalWeight):
     _ProportionalWeight."""
 
     def __init__(self, signal_df: pd.DataFrame, total_return: bool, currency: str, price_obs_freq: {str, int},
+                 non_daily_price_obs: bool, observation_window: {int, list, None}, clean_data: bool,
                  inversely: bool, max_instrument_weight: {float, None}, min_instrument_weight: {float, None}):
         _PriceBasedWeight.__init__(self, signal_df=signal_df, total_return=total_return, currency=currency,
-                                   price_obs_freq=price_obs_freq, max_instrument_weight=max_instrument_weight,
-                                   min_instrument_weight=min_instrument_weight)
+                                   price_obs_freq=price_obs_freq, non_daily_price_obs=non_daily_price_obs,
+                                   observation_window=observation_window, clean_data=clean_data,
+                                   max_instrument_weight=max_instrument_weight, min_instrument_weight=min_instrument_weight)
         _ProportionalWeight.__init__(self, signal_df=signal_df, inversely=inversely,
                                      max_instrument_weight=max_instrument_weight,
                                      min_instrument_weight=min_instrument_weight)
@@ -338,21 +456,27 @@ class _PriceBasedProportionalWeight(_PriceBasedWeight, _ProportionalWeight):
 class VolatilityWeight(_PriceBasedProportionalWeight):
     """Class definition of VolatilityWeight. Subclass of _PriceBasedProportionalWeight."""
 
-    def __init__(self, volatility_observation_period: {int, list}, inversely: bool = True, signal_df: pd.DataFrame = None,
+    def __init__(self, volatility_observation_period: {int, list}, inversely: bool = True,
+                 signal_df: pd.DataFrame = None,
                  total_return: bool = True, currency: str = None, price_obs_freq: {str, int}=None,
-                 max_instrument_weight: float = None, min_instrument_weight: float = None):
+                 non_daily_price_obs: bool = False, max_instrument_weight: float = None, min_instrument_weight: float = None,
+                 clean_data: bool = False):
         super().__init__(signal_df=signal_df, total_return=total_return, currency=currency,
-                         price_obs_freq=price_obs_freq, inversely=inversely, max_instrument_weight=max_instrument_weight,
+                         price_obs_freq=price_obs_freq, non_daily_price_obs=non_daily_price_obs,
+                         observation_window=volatility_observation_period, clean_data=clean_data,
+                         inversely=inversely, max_instrument_weight=max_instrument_weight,
                          min_instrument_weight=min_instrument_weight)
         self.volatility_observation_period = volatility_observation_period
-        if isinstance(volatility_observation_period, int):
-            self._observation_buffer = volatility_observation_period + 10
-        else:
-            self._observation_buffer = max(volatility_observation_period) + 10
 
     def _get_dataframe(self):
+        annualization_factor = self.get_annualization_factor()
         price = self._get_price_df()
-        volatility = realized_volatility(multivariate_price_df=price, vol_lag=self.volatility_observation_period)
+        if self.non_daily_price_obs or isinstance(self.price_obs_freq, str):
+            return_lag = 1
+        else:
+            return_lag = self.price_obs_freq
+        volatility = realized_volatility(multivariate_price_df=price, vol_lag=self.volatility_observation_period,
+                                         annualized_factor=annualization_factor, return_lag=return_lag)
         return volatility
 
     def get_weight_desc(self):
@@ -361,31 +485,105 @@ class VolatilityWeight(_PriceBasedProportionalWeight):
         else:
             return 'weight is proportional to realized volatility'
 
+    # ------------------------------------------------------------------------------------------------------------------
+    # get and setter methods
+    @property
+    def volatility_observation_period(self):
+        return self.observation_window
+
+    @volatility_observation_period.setter
+    def volatility_observation_period(self, volatility_observation_period: {int, list}):
+        self.observation_window = volatility_observation_period
+
 
 class MeanReversionWeight(_PriceBasedWeight):
-    """Class definition of """
+    """Class definition of MeanReversionWeight"""
 
-    def __init__(self, signal_df: pd.DataFrame, total_return: bool = False, currency: str = None, max_instrument_weight: float = None,
-                 min_instrument_weight: float = None, price_obs_freq: {str, int}=None, observation_window: int = None):
-        super().__init__(signal_df=signal_df, total_return=total_return, currency=currency, price_obs_freq=price_obs_freq,
-                         max_instrument_weight=max_instrument_weight, min_instrument_weight=min_instrument_weight)
-        self.observation_window = observation_window
-        self._observation_buffer = observation_window
+    def __init__(self, signal_df: pd.DataFrame, total_return: bool = False, currency: str = None,
+                 max_instrument_weight: float = None, min_instrument_weight: float = None, use_mean: bool = False,
+                 std_multiplier: float = 1.0, price_obs_freq: {str, int}=None, non_daily_price_obs: bool = False,
+                 observation_window: int = None, clean_data: bool = True):
+        super().__init__(signal_df=signal_df, total_return=total_return, currency=currency,
+                         price_obs_freq=price_obs_freq, non_daily_price_obs=non_daily_price_obs, observation_window=observation_window,
+                         clean_data=clean_data, max_instrument_weight=max_instrument_weight, min_instrument_weight=min_instrument_weight)
+        self.use_mean = use_mean
+        self.std_multiplier = std_multiplier
 
-    def _calculate_weight(self):
+    @staticmethod
+    def _get_diff_array(return_df: pd.DataFrame)->np.array:
+        """
+        Returns an array with the pairwise differences in price return for each observation date
+        :param return_df: pd.DataFrame
+        :return: np.array
+        """
+        logger.debug('calculate the pairwise difference in returns')
+        num_tickers = return_df.shape[1]
+        num_dates = return_df.shape[0]
+        diff = return_df.T.values - return_df.T.values[:, None]
+        diff = np.reshape(diff, newshape=(num_tickers ** 2, num_dates)).T
+        return diff
 
-        # get a list of list of eligible tickers tickers i.e. tickers that has a signal value
+    def _get_mean_reversion_indicator(self, return_df: pd.DataFrame):
+        """
+
+        :param return_df:
+        :return:
+        """
+        diff = self._get_diff_array(return_df=return_df)
+
+        # calculate standard deviation and mean when applicable
+        if self.use_mean:
+            diff_mean = np.mean(diff, axis=0)
+        else:
+            diff_mean = 0
+        diff_std = np.std(diff, axis=0, ddof=1) * self.std_multiplier
+        diff_latest = diff[-1, :]
+
+        # calculate indicators
+        # when the difference between the return of the ith and jth instrument is lower (higher) than
+        # historically, that means that we could expect the ith instrument to increase (decrease) relative to the jth
+        # return. hence this is a bullish (bearish) signal for the ith instrument
+        bullish_indi = diff_latest < diff_mean - diff_std
+        bullish_indi = bullish_indi + 0
+        bearish_indi = diff_latest > diff_mean + diff_std
+        bearish_indi = bearish_indi + 0
+        mean_rev_indi = bullish_indi - bearish_indi
+
+        # aggregate the signal for each ticker
+        num_tickers = return_df.shape[1]
+        index_to_sum = [range(i, i + num_tickers * (num_tickers - 1) + 1, num_tickers)
+                        for i in range(num_tickers)]
+        divisor = num_tickers * (num_tickers - 1)
+        mean_rev_indi_per_instrument = [np.sum(mean_rev_indi[indices]) / divisor for indices in index_to_sum]
+        return mean_rev_indi_per_instrument
+
+    def _calculate_weight(self) -> pd.DataFrame:
+        """
+        Weight is calculated based on how much an instrument has deviated from historical return spreads compared to
+        other instruments
+        :return: pd.DataFrame
+        """
+        # retrieve a list of DataFrames containing price returns
+        return_df_list = self._get_price_return_df_list()
+
+        # loop through each observation date and calculate the weights
+        logger.debug('calculate the mean reversion weights for each return_df')
+        mean_reversion_weight_list = [self._get_mean_reversion_indicator(return_df=return_df)
+                                      for return_df in return_df_list]
+
+        # list of list of eligible tickers (i.e. having a defined signal) for each signal observation date
         eligible_tickers_list = self._get_eligible_tickers_list()
 
-        # retrieve a list of DataFrames containing price returns
-        return_df_list = self._get_price_return_df_list(eligible_tickers_list=eligible_tickers_list,
-                                                        price_return_lag=1,
-                                                        observation_window=self.observation_window,
-                                                        nan_ffill_drop=True)
-
-        print(self._get_price_df())
-        import sys
-        sys.exit()
+        # reformat result as a DataFrame
+        logger.debug('reformat result as a DataFrame')
+        mean_reversion_weight_df = pd.DataFrame(np.zeros((self.signal_df.shape[0], self.signal_df.shape[1])),
+                                                index=self.signal_df.index, columns=self.signal_df.columns)
+        obs_calendar = self.signal_df.index
+        for i in range(self.signal_df.shape[0]):
+            obs_date = obs_calendar[i]
+            eligible_tickers = eligible_tickers_list[i]
+            mean_reversion_weight_df.loc[obs_date, eligible_tickers] = mean_reversion_weight_list[i]
+        return mean_reversion_weight_df
 
 
 class _OptimizedWeight(_PriceBasedWeight):
@@ -393,19 +591,15 @@ class _OptimizedWeight(_PriceBasedWeight):
 
     def __init__(self, signal_df: pd.DataFrame, total_return: bool, currency: str, max_instrument_weight: {float, None},
                  min_instrument_weight: {float, None}, max_total_weight: {float, None}, min_total_weight: {float, None},
-                 price_return_lag: int, observation_window: int, calculate_mean_returns: bool, has_analytical_solution: bool):
-        super().__init__(signal_df=signal_df, total_return=total_return, currency=currency, price_obs_freq=None,
-                         max_instrument_weight=None, min_instrument_weight=None)
-        self.op_max_i_w = max_instrument_weight
-        self.op_min_i_w = min_instrument_weight
-        self.max_total_w = max_total_weight
-        self.min_total_w = min_total_weight
-        self.price_return_lag = price_return_lag
-        self.observation_window = observation_window
+                 price_return_lag: int, non_daily_price_obs: bool, observation_window: int, calculate_mean_returns: bool,
+                 has_analytical_solution: bool, clean_data: bool):
+        super().__init__(signal_df=signal_df, total_return=total_return, currency=currency, price_obs_freq=price_return_lag,
+                         non_daily_price_obs=non_daily_price_obs, clean_data=clean_data, observation_window=observation_window,
+                         max_instrument_weight=max_instrument_weight, min_instrument_weight=min_instrument_weight)
+        self.max_total_weight = max_total_weight
+        self.min_total_weight = min_total_weight
         self.calculate_mean_returns = calculate_mean_returns
-        self._observation_buffer = observation_window + self.price_return_lag + 10
         self.has_analytical_solution = has_analytical_solution
-        self.annualizing_factor = 252 / self.price_return_lag  # to be used in the non analytical optimization
 
     def _optimizer(self, cov_matrix: np.array, mean_returns: {np.array, None}, initial_guess: np.array) -> np.array:
         raise ValueError('an optimizer has not been specified')
@@ -414,36 +608,35 @@ class _OptimizedWeight(_PriceBasedWeight):
         raise ValueError('an optimizer with an analytical solution has not been specified')
 
     def _calculate_weight(self):
-        signal_df = self.signal_df.copy()
-        signal_df[~signal_df.isnull()] = 1  # set all non NaN to 1 (MWO are agnostic to initial strategy signals)
-
-        obs_calendar = signal_df.index
-        num_obs_dates = len(obs_calendar)
-
-        # selection based on price history and if the ticker is eligible (based on having a valid signal)
-        eligible_tickers_list = self._get_eligible_tickers_list()
-
+        """
+        Return a DataFrame with the same index and columns as the signal DataFrame containing the optimized weights.
+        A list of price return DataFrames is used to calculate a list of covariance matrices and mean return vectors
+        when applicable. If specified and when applicable, the script will use an analytical solution of the optimization
+        problem.
+        :return:
+        """
         # retrieve a list of DataFrames containing price returns
-        return_df_list = self._get_price_return_df_list(eligible_tickers_list=eligible_tickers_list,
-                                                        price_return_lag=self.price_return_lag,
-                                                        observation_window=self.observation_window)
+        return_df_list = self._get_price_return_df_list()
 
-        # using the price returns calculate the inputs to be used in the optimizer (correlation etc.)
+        # using the price returns calculate the inputs to be used in the optimizer
         # inputs should all be numpy arrays
         cov_matrix_list = self._get_covariance_matrix_list(return_df_list)
         if self.calculate_mean_returns:
             mean_return_list = self._get_mean_return_array_list(return_df_list)
         else:
-            mean_return_list = num_obs_dates * [None]
+            mean_return_list = self.signal_df.shape[0] * [None]
 
         # only use the theoretical optimizer when there are no constraints and if an analytical solution is available
-        use_theoretical_optimizer = (com.count_not_none(self.op_min_i_w, self.op_max_i_w) == 0) \
-                                    and self.min_total_w == self.max_total_w and self.has_analytical_solution
+        use_theoretical_optimizer = (com.count_not_none(self.min_instrument_weight, self.max_instrument_weight) == 0) \
+                                    and self.min_total_weight == self.max_total_weight and self.has_analytical_solution
+
+        # list of list of eligible tickers (i.e. having a defined signal) for each signal observation date
+        eligible_tickers_list = self._get_eligible_tickers_list()
 
         # loop through each observation date and use the optimizer to calculate the weights
         prev_eligible_tickers = eligible_tickers_list[0]
         optimized_weight_list = []  # the solved weight arrays are stored here
-        for i in range(num_obs_dates):
+        for i in range(self.signal_df.shape[0]):
             if use_theoretical_optimizer:
                 # no initial guess is needed when using a theoretical/analytical solution
                 # however since _theoretical_optimizer passes on the
@@ -468,9 +661,10 @@ class _OptimizedWeight(_PriceBasedWeight):
             optimized_weight_list.append(optimized_weight)
 
         # reformat result as a DataFrame
-        optimized_weight_df = pd.DataFrame(np.zeros((signal_df.shape[0], signal_df.shape[1])),
-                                           index=signal_df.index, columns=signal_df.columns)
-        for i in range(num_obs_dates):
+        optimized_weight_df = pd.DataFrame(np.zeros((self.signal_df.shape[0], self.signal_df.shape[1])),
+                                           index=self.signal_df.index, columns=self.signal_df.columns)
+        obs_calendar = self.signal_df.index
+        for i in range(self.signal_df.shape[0]):
             obs_date = obs_calendar[i]
             eligible_tickers = eligible_tickers_list[i]
             optimized_weight_df.loc[obs_date, eligible_tickers] = optimized_weight_list[i]
@@ -496,39 +690,62 @@ class _OptimizedWeight(_PriceBasedWeight):
         mean_return_list = [return_df.mean().values for return_df in return_df_list]
         return mean_return_list
 
+    # ------------------------------------------------------------------------------------------------------------------
+    # get and setter methods
+    @property
+    def price_return_lag(self):
+        return self.price_obs_freq
+
+    @price_return_lag.setter
+    def price_return_lag(self, price_return_lag: {int, str}):
+        self.price_obs_freq = price_return_lag
+
 
 class MinimumVarianceWeight(_OptimizedWeight):
     """Class definition for MinimumVarianceWeight"""
 
     def __init__(self, observation_window: int, price_return_lag: int = 1, max_instrument_weight: float = None,
                  min_instrument_weight: float = None, total_allocation: float = 1.0, signal_df: pd.DataFrame = None,
-                 total_return: bool = False, currency: str = None):
+                 total_return: bool = False, currency: str = None, non_daily_price_obs: bool = False,
+                 clean_data: bool = True):
         super().__init__(signal_df=signal_df, total_return=total_return, currency=currency,
                          max_instrument_weight=max_instrument_weight, min_instrument_weight=min_instrument_weight,
                          max_total_weight=total_allocation, min_total_weight=total_allocation,
                          price_return_lag=price_return_lag, observation_window=observation_window,
-                         calculate_mean_returns=False, has_analytical_solution=True)
+                         calculate_mean_returns=False, has_analytical_solution=True,
+                         non_daily_price_obs=non_daily_price_obs, clean_data=clean_data)
+        self._total_allocation = total_allocation
 
     def _optimizer(self, cov_matrix: np.array, mean_returns: np.array, initial_guess: np.array):
-        pd.DataFrame(data=cov_matrix).to_clipboard()
+        annualization_factor = self.get_annualization_factor()
         return minimum_variance_portfolio_weights_with_constraints(
-            covariance_matrix=cov_matrix, initial_guess=initial_guess, max_total_weight=self.max_total_w,
-            max_instrument_weight=self.op_max_i_w, min_instrument_weight=self.op_min_i_w,
-            annualizing_factor=self.annualizing_factor
+            covariance_matrix=cov_matrix, initial_guess=initial_guess, max_total_weight=self.total_allocation,
+            max_instrument_weight=self.max_instrument_weight, min_instrument_weight=self.min_instrument_weight,
+            annualizing_factor=annualization_factor
         )
 
     def _theoretical_optimizer(self, cov_matrix: np.array, mean_returns: {np.array, None}):
         return theoretical_minimum_variance_portfolio_weights(
-            covariance_matrix=cov_matrix, allocation=self.max_total_w
+            covariance_matrix=cov_matrix, allocation=self.total_allocation
         )
+
+    @property
+    def total_allocation(self):
+        return self._total_allocation
+
+    @total_allocation.setter
+    def total_allocation(self, total_allocation: float):
+        self._total_allocation = total_allocation
+        self.max_total_weight = total_allocation
+        self.min_total_weight = total_allocation
 
 
 def min_var_test():
     from excel_tools import load_df
     file_path = r'C:\Users\gafza\PycharmProjects\AlgorithmicTradingStrategies\excel_data\signal_test.xlsx'
-    signal_df = load_df(full_path=file_path)
+    signal_df = load_df(full_path=file_path, sheet_name='Sheet1')
 
-    weight = MinimumVarianceWeight(60, signal_df=signal_df, min_instrument_weight=0)
+    weight = MinimumVarianceWeight(60, signal_df=signal_df)
     weight_df = weight.get_weights()
     print(weight_df)
 
@@ -542,9 +759,9 @@ def main():
         signal_df=signal_df,
         price_obs_freq=1,
         observation_window=252)
-
     weight._calculate_weight()
 
+
 if __name__ == '__main__':
-    main()
+    min_var_test()
 
