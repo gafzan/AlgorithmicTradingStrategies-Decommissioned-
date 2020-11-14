@@ -18,6 +18,8 @@ create_directory(__BASE_FOLDER__)
 # contains excel workbooks with tickers
 __EXCEL_TICKER_FOLDER__ = __BASE_FOLDER__ + r'\excel_data' + '\\tickers'
 create_directory(__EXCEL_TICKER_FOLDER__)
+__TICKER_ELIGIBILITY_FOLDER__ = __EXCEL_TICKER_FOLDER__ + '\\ticker_eligibility'
+create_directory(__TICKER_ELIGIBILITY_FOLDER__)
 # contains excel workbooks with data requested from the database
 __DATA_REQUEST_FOLDER__ = __BASE_FOLDER__ + r'\excel_data' + '\\data_requests'
 create_directory(__DATA_REQUEST_FOLDER__)
