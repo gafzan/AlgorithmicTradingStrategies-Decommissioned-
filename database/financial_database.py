@@ -57,7 +57,7 @@ class FinancialDatabase:
         """Assumes that tickers is either a string or a list of strings. Deletes all Underlying rows corresponding to
         the ticker(s). This will also remove all rows from tables that are subclasses to Underlying."""
         tickers = self.reformat_tickers(tickers, convert_to_list=True)
-        logger.info("Trying to delete {} ticker(s) from the database.\nTicker(s): %s".format(len(tickers)) % ', '.join(tickers))
+        logger.debug("Trying to delete {} ticker(s) from the database.\nTicker(s): %s".format(len(tickers)) % ', '.join(tickers))
         tickers_that_exists = [ticker for ticker in tickers if self.underlying_exist(ticker)]
         if len(tickers_that_exists) < len(tickers):
             logger.warning('{} ticker(s) could not be deleted since they do not exist in the database.'.format(len(tickers) - len(tickers_that_exists)))
@@ -202,7 +202,7 @@ class FinancialDatabase:
         observation date, 2) latest observation date with value, 3) oldest observation date and 4) first ex-dividend
         date (if any)."""
 
-        logger.info('Updating oldest and latest observation date and first xe-dividend date for {} ticker(s).'.format(len(tickers)))
+        logger.debug('Updating oldest and latest observation date and first ex-dividend date for {} ticker(s).'.format(len(tickers)))
         underlying_id_list = list(self.get_ticker_underlying_attribute_dict(tickers, Underlying.id).values())
         self._update_dividend_info(underlying_id_list)
         self._update_obs_date(underlying_id_list)
@@ -316,7 +316,7 @@ class FinancialDatabase:
     def _get_open_high_low_close_volume_dividend_df(self, table, tickers: {str, list}, start_date: {date, datetime},
                                                     end_date: {date, datetime}, currency: str)->pd.DataFrame:
         tickers, start_date, end_date = self._input_check_before_getting_ohlc_volume(tickers, start_date, end_date)
-        logger.debug('Get {} data for {} ticker(s)'.format(table.__tablename__, len(tickers))
+        logger.info('Get {} data for {} ticker(s)'.format(table.__tablename__, len(tickers))
                      + logger_time_interval_message(start_date, end_date))
 
         # need to add an extra day otherwise the 'between' function below does not capture the end date
@@ -427,7 +427,7 @@ class FinancialDatabase:
         data based on the currency that each ticker is quoted in. The method then converts the values in the DataFrame.
         """
         price_currency = capital_letter_no_blanks(currency)
-        logger.debug('Converts DataFrame to {}.'.format(price_currency))
+        logger.info('Converts DataFrame to {}.'.format(price_currency))
         ticker_currency_dict = self.get_ticker_underlying_attribute_dict(list(values_df), Underlying.currency)
         ticker_fx_ticker_dict = {ticker: price_currency + '_' + base_currency + '.FX' if base_currency != price_currency else None for ticker, base_currency in ticker_currency_dict.items()}
         unique_fx_ticker_list = list(set(ticker_fx_ticker_dict.values()))
@@ -475,7 +475,7 @@ class FinancialDatabase:
 
     def get_liquidity_df(self, tickers: {str, list}, start_date: {date, datetime}=None, end_date: {date, datetime}=None,
                          currency: str = None):
-        logger.debug('Get liquidity data' + logger_time_interval_message(start_date, end_date))
+        logger.info('Get liquidity data' + logger_time_interval_message(start_date, end_date))
         close_price_df = self.get_close_price_df(tickers, start_date=start_date, end_date=end_date, currency=currency)
         volume_df = self.get_volume_df(tickers, start_date=start_date, end_date=end_date)
         volume_df = select_rows_from_dataframe_based_on_sub_calendar(volume_df, close_price_df.index)
@@ -488,7 +488,7 @@ class FinancialDatabase:
 
     def get_total_return_df(self, tickers: {str, list}, start_date: datetime = None, end_date: datetime = None,
                             withholding_tax: {float} = 0.0, currency: str = None):
-        logger.debug('Get total return data' + logger_time_interval_message(start_date, end_date))
+        logger.info('Get total return data' + logger_time_interval_message(start_date, end_date))
         dividends = self.get_dividend_df(tickers, start_date=start_date, end_date=end_date)
         if dividends.empty:
             logger.info('No dividends paid' + logger_time_interval_message(start_date, end_date)
@@ -691,7 +691,7 @@ class _DataFeeder(FinancialDatabase):
 
         ticker_list = [tup[0] for tup in query_eligible_tickers]  # list of the eligible tickers
         if len(ticker_list) == 0:
-            logger.info('All underlyings are of type %s.' % ' or '.join(excluded_underlying_types))
+            logger.debug('All underlyings are of type %s.' % ' or '.join(excluded_underlying_types))
             return
 
         dividend_df = self._retrieve_dividend_df(ticker_list, start_date, end_date)
@@ -797,7 +797,7 @@ class YahooFinanceFeeder(_DataFeeder):
                                     exchange=capital_letter_no_blanks(ticker_info.get('exchange', default_str)))
             underlying_list.append(underlying)
             counter += 1
-        logger.debug('Append {} row(s) to the Underlying table in the database.'.format(len(underlying_list)))
+        logger.info('Append {} row(s) to the Underlying table in the database.'.format(len(underlying_list)))
         self.session.add_all(underlying_list)
         logger.debug('Commit the new Underlying rows.')
         self.session.commit()
@@ -805,7 +805,7 @@ class YahooFinanceFeeder(_DataFeeder):
 
     def _retrieve_dividend_df(self, ticker_list: list, start_date: {date, datetime}, end_date: {date, datetime}) \
             -> {pd.DataFrame, None}:
-        logger.debug("Downloading dividend data from Yahoo Finance and reformat the DataFrame.")
+        logger.info("Downloading dividend data from Yahoo Finance and reformat the DataFrame.")
         yf_ticker_list = self.yahoo_finance_ticker(ticker_list)  # need to download the dividends per YF ticker
         dividend_amount_total_df = None  # initialize the resulting DataFrame.
         ticker_underlying_id_dict = self.get_ticker_underlying_attribute_dict(ticker_list, Underlying.id)
@@ -845,7 +845,7 @@ class YahooFinanceFeeder(_DataFeeder):
 
     def _retrieve_open_high_low_close_volume_df(self, ticker_list: list, start_date: {date, datetime},
                                                 end_date: {date, datetime}) -> {pd.DataFrame, None}:
-        logger.debug("Downloading OHLC and volume data from Yahoo Finance and reformat the DataFrame.")
+        logger.info("Downloading OHLC and volume data from Yahoo Finance and reformat the DataFrame.")
         multiple_ticker_str = self.multiple_ticker_string(ticker_list)  # ['ABC', 'DEF'] -> 'ABC DEF'
         yf_historical_data_df = yfinance.download(tickers=multiple_ticker_str, start=start_date,
                                                   end=end_date + timedelta(days=1))  # need to add an extra date
@@ -952,10 +952,10 @@ class ExcelFeeder(_DataFeeder):
                 loaded_df = self._clean_loaded_dataframe(loaded_df, sheet_name)
                 self._dataframe_sheet_name_dict[sheet_name] = loaded_df
             except xlrd.biffh.XLRDError:
-                logger.debug("Sheet '{}' did not exist.".format(sheet_name))
+                logger.info("Sheet '{}' did not exist.".format(sheet_name))
                 self._dataframe_sheet_name_dict[sheet_name] = None
             except IndexError:
-                logger.debug("Sheet '{}' is empty.".format(sheet_name))
+                logger.info("Sheet '{}' is empty.".format(sheet_name))
                 self._dataframe_sheet_name_dict[sheet_name] = None
 
     def _clean_loaded_dataframe(self, loaded_df: pd.DataFrame, data_name: str)-> pd.DataFrame:
@@ -967,7 +967,7 @@ class ExcelFeeder(_DataFeeder):
         """
         default_str = 'NA'
         if len(list(loaded_df.index)) == 0:
-            logger.debug("Sheet '{}' is empty.".format(data_name))
+            logger.info("Sheet '{}' is empty.".format(data_name))
             loaded_df = None
         else:
             if data_name == 'underlying':
@@ -987,7 +987,7 @@ class ExcelFeeder(_DataFeeder):
                 loaded_df.columns = self.reformat_tickers(list(loaded_df))  # reformat the column names (i.e. tickers)
             else:
                 raise ValueError("Data name '{}' not recognized.".format(data_name))
-            logger.debug("Sheet '{}' loaded successfully.".format(data_name))
+            logger.info("Sheet '{}' loaded successfully.".format(data_name))
         return loaded_df
 
     def insert_data_to_database(self):
@@ -1037,7 +1037,7 @@ class ExcelFeeder(_DataFeeder):
                                     website=underlying_df['website'].values[0],
                                     exchange=capital_letter_no_blanks(underlying_df['exchange'].values[0]))
             underlying_list.append(underlying)
-        logger.debug('Append {} row(s) to the Underlying table in the database.'.format(len(underlying_list)))
+        logger.info('Append {} row(s) to the Underlying table in the database.'.format(len(underlying_list)))
         self.session.add_all(underlying_list)
         logger.debug('Commit the new Underlying rows.')
         self.session.commit()
@@ -1118,7 +1118,7 @@ class BloombergFeeder(_DataFeeder):
                                     exchange=capital_letter_no_blanks(underlying_info.loc[ticker, 'EXCH_CODE']))
             underlying_list.append(underlying)
             counter += 1
-        logger.debug('Append {} row(s) to the Underlying table in the database.'.format(len(underlying_list)))
+        logger.info('Append {} row(s) to the Underlying table in the database.'.format(len(underlying_list)))
         self.session.add_all(underlying_list)
         self._add_expiry_date_in_description(ticker_list)  # in case there are tickers that are future contracts
         logger.debug('Commit the new Underlying rows.')
@@ -1167,7 +1167,7 @@ class BloombergFeeder(_DataFeeder):
                 )
 
     def _retrieve_dividend_df(self, ticker_list: list, start_date: {date, datetime}=None, end_date: {date, datetime}=None):
-        logger.debug('Downloading dividend data from Bloomberg and reformat the DataFrame.')
+        logger.info('Downloading dividend data from Bloomberg and reformat the DataFrame.')
         ticker_underlying_id_dict = self.get_ticker_underlying_attribute_dict(ticker_list, Underlying.id)
         bbg_ticker_list = self._ticker_adjustment(ticker_list)
         dividend_amount_df = self.bbg_con.get_dividend_data(bbg_ticker_list, start_date, end_date, do_pivot=False)
@@ -1186,7 +1186,7 @@ class BloombergFeeder(_DataFeeder):
         return dividend_amount_df[['ex_div_date', 'dividend_amount', 'comment', 'data_source', 'underlying_id']]
 
     def _retrieve_open_high_low_close_volume_df(self, ticker_list: list, start_date: {date, datetime}, end_date: {date, datetime}):
-        logger.debug('Download OHLC and volume data from Bloomberg and reformat the DataFrame.')
+        logger.info('Download OHLC and volume data from Bloomberg and reformat the DataFrame.')
         fields = ['PX_OPEN', 'PX_HIGH', 'PX_LOW', 'PX_LAST', 'PX_VOLUME']
         bbg_ticker_list = self._ticker_adjustment(ticker_list)
         ohlc_volume_bbd_df = self.bbg_con.get_daily_data(bbg_ticker_list, fields, start_date, end_date)
