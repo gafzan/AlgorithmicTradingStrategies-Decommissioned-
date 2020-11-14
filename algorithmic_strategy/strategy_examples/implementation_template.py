@@ -44,9 +44,9 @@ def main():
     volatility_target = 0.10  # used by a volatility target overlay
     volatility_target_obs_lag = 60  # used by a volatility target overlay
     index_name = 'My Index'
-    save_back_test_to_excel = False
+    save_back_test_to_excel = True
     print_performance_result = True
-    make_plot = False
+    make_plot = True
     tickers = get_tickers()
 
     # 2) setup the investment universe
