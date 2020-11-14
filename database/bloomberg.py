@@ -17,6 +17,8 @@ import logging
 
 # my modules
 from general_tools import list_grouper, progression_bar
+from excel_tools import save_df
+from database.config_database import __TICKER_ELIGIBILITY_FOLDER__
 
 # logger
 logger = logging.getLogger(__name__)
@@ -384,3 +386,25 @@ class BloombergConnection:
             return adj_ticker_list[0]
         else:
             return adj_ticker_list
+
+
+def save_index_membership_df_to_excel():
+    # input paramters
+    index_name = input("Enter a name of an index (e.g. 'SPX'): ")
+    if 'index' not in index_name:
+        index_name += ' index'
+    obs_freq = input("Enter the frequency for when you observe the members of '{}' (e.g. '3M')".format(index_name.upper()))
+    obs_calendar = pd.date_range(start='2000', end=datetime.today(), freq=obs_freq)
+
+    # connect to Bloomberg and load a DataFrame that has value 1 if the ticker is included in the index at the
+    # particular observation date
+    bbg_con = BloombergConnection(use_debug=False)
+    member_df = bbg_con.get_index_inclusion_df(index_ticker=index_name, observation_calendar=obs_calendar)
+    full_path = __TICKER_ELIGIBILITY_FOLDER__ + '\\' + index_name.lower().replace(' ', '_') + '_member_' \
+                + obs_freq + '_observation_' + str(datetime.today())[:10] + '.xlsx'
+    save_df(df_list=member_df, full_path=full_path, sheet_name_list='index_members')
+
+
+if __name__ == '__main__':
+    save_index_membership_df_to_excel()
+
