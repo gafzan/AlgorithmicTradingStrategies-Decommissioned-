@@ -740,28 +740,3 @@ class MinimumVarianceWeight(_OptimizedWeight):
         self.min_total_weight = total_allocation
 
 
-def min_var_test():
-    from excel_tools import load_df
-    file_path = r'C:\Users\gafza\PycharmProjects\AlgorithmicTradingStrategies\excel_data\signal_test.xlsx'
-    signal_df = load_df(full_path=file_path, sheet_name='Sheet1')
-
-    weight = MinimumVarianceWeight(60, signal_df=signal_df)
-    weight_df = weight.get_weights()
-    print(weight_df)
-
-
-def main():
-    from excel_tools import load_df
-    file_path = r'C:\Users\gafza\PycharmProjects\AlgorithmicTradingStrategies\excel_data\signal_test.xlsx'
-    signal_df = load_df(full_path=file_path)
-
-    weight = MeanReversionWeight(
-        signal_df=signal_df,
-        price_obs_freq=1,
-        observation_window=252)
-    weight._calculate_weight()
-
-
-if __name__ == '__main__':
-    min_var_test()
-
