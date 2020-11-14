@@ -11,6 +11,7 @@ from pandas.tseries.offsets import BDay
 import numpy as np
 from tkinter import filedialog, Tk
 import xlrd
+from dateutil.parser import parse as str_to_datetime
 
 # my own modules
 from database.models_db import Base, Underlying, OpenPrice, HighPrice, LowPrice, ClosePrice, Volume, Dividend
@@ -386,14 +387,28 @@ class FinancialDatabase:
         if len(tickers_not_in_database) > 0:
             raise ValueError(
                 "{} ticker(s) are missing from the database.\nTicker(s): %s".format(len(tickers_not_in_database)) % ", ".join(tickers_not_in_database))
+
+        # adjust start date
         if start_date is None:
             # Pick the oldest observation date available
             start_date = min(
                 self.get_ticker_underlying_attribute_dict(tickers, Underlying.oldest_observation_date).values())
+        elif isinstance(start_date, str):
+            start_date = str_to_datetime(start_date)
+
+        if isinstance(start_date, datetime):
+            start_date = start_date.date()
+
+        # adjust end date
         if end_date is None:
             # Pick the latest observation date with data available
             end_date = max(self.get_ticker_underlying_attribute_dict(tickers,
                                                                      Underlying.latest_observation_date_with_values).values())
+        elif isinstance(end_date, str):
+            end_date = str_to_datetime(end_date)
+
+        if isinstance(end_date, datetime):
+            end_date = end_date.date()
         return tickers, start_date, end_date
 
     @staticmethod
