@@ -402,7 +402,8 @@ def save_index_membership_df_to_excel():
     member_df = bbg_con.get_index_inclusion_df(index_ticker=index_name, observation_calendar=obs_calendar)
     full_path = __TICKER_ELIGIBILITY_FOLDER__ + '\\' + index_name.lower().replace(' ', '_') + '_member_' \
                 + obs_freq + '_observation_' + str(datetime.today())[:10] + '.xlsx'
-    save_df(df_list=member_df, full_path=full_path, sheet_name_list='index_members')
+    tickers_df = pd.DataFrame({'tickers': list(member_df)})
+    save_df(df_list=[member_df, tickers_df], full_path=full_path, sheet_name_list=['index_members', 'tickers'])
 
 
 if __name__ == '__main__':
