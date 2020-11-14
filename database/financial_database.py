@@ -1245,21 +1245,14 @@ def logger_time_interval_message(start_date: {date, datetime}, end_date: {date, 
     return logger_message
 
 
-def main():
+def add_data_from_excel_main():
     init_dir = __DATABASE_FEED_EXCEL_FILES_FOLDER__
     excel_db = ExcelFeeder(__MY_DATABASE_NAME__, init_dir)
     excel_db.load_data_from_excel()
     excel_db.insert_data_to_database()
 
 
-def add_futures():
-    bbg_fin_db = BloombergFeeder(__MY_DATABASE_NAME__, bbg_echo=False)
-    generic_futures_ticker = 'GC1 COMDTY'
-    futures_tickers = bbg_fin_db.bbg_con.get_futures_chain(generic_futures_ticker)
-    bbg_fin_db.add_underlying(futures_tickers)
-
-
 if __name__ == '__main__':
-    main()
+    add_data_from_excel_main()
 
 
