@@ -89,20 +89,6 @@ class Index(Basket):
         self._eligible_signal_accumulation_methods = ['union', 'intersection']
         self.signal_accumulation_method = signal_accumulation_method
 
-    def _apply_weight_modifier(self, daily_return_df: pd.DataFrame, daily_weight_df: pd.DataFrame):
-
-        if self.overlay is None:
-            pass
-        elif isinstance(self.overlay, list):
-            # apply each weight overlays
-            for weight_overlay in self.overlay:
-                daily_return_df, daily_weight_df = weight_overlay.get_return_weight_tuple_after_scaling(
-                    multivariate_daily_return_df=daily_return_df,
-                    multivariate_daily_weight_df=daily_weight_df)
-        else:
-            daily_return_df, daily_weight_df = self.overlay.get_return_weight_tuple_after_scaling(multivariate_daily_return_df=daily_return_df, multivariate_daily_weight_df=daily_weight_df)
-        return daily_return_df, daily_weight_df
-
     def get_back_test(self, end_date: datetime = None, drop_nan: bool = True) -> pd.DataFrame:
         """
         Calculate the index using the signal, weight and the weight overlays
@@ -123,44 +109,37 @@ class Index(Basket):
 
         # TODO need to check if the weight obs lag is ok
 
-        # clean the daily returns
-        daily_returns.fillna(0, inplace=True)
-
-        # calculate the gross return of the index
-        col_name = 'gross_index'
-        gross_instrument_returns = daily_returns * daily_weight.shift(self.weight_observation_lag).values
-        index_return_df = pd.DataFrame({'gross_return': gross_instrument_returns.sum(axis=1, skipna=False).values},
-                                       index=gross_instrument_returns.index)
-
-        # if applicable, calculate the return net of transaction costs and fees
-        if self.transaction_cost > 0 or self.index_fee != 0:
-            # net of transaction costs
-            abs_weight_delta = daily_weight.diff().abs().sum(axis=1)
-            transaction_cost_df = pd.DataFrame({'TC': self.transaction_cost * abs_weight_delta.values},
-                                               index=abs_weight_delta.index)
-            index_return_df -= transaction_cost_df.values
-
-            # net of index fees
-            dt = [None] + [(index_return_df.index[n] - index_return_df.index[n - 1]).days / 365 for n in
-                           range(1, len(index_return_df.index))]
-            dt_s = pd.Series(data=dt, index=index_return_df.index)
-            index_fee_df = pd.DataFrame({'FEE': self.index_fee * dt_s.values}, index=dt_s.index)
-            index_return_df -= index_fee_df.values
-            index_return_df.columns = ['net_return']
-            col_name = 'net_index'
-
-        # calculate the index
-        index_result_df = index_return_df.copy()
-        start_of_index_i = index_return_df.index.get_loc(index_return_df.first_valid_index()) - 1
-        index_result_df = (1 + index_result_df).cumprod()  # (1 + r_1) * (1 + r_2) * ...
-        index_result_df.iloc[start_of_index_i, :] = 1.0  # start at 1.0
-        index_result_df *= self.initial_value  # scale the index by the initial value
-        index_result_df.columns = [col_name]
-
-        # clean results if applicable
+        index_result_df = index_calculation(daily_returns=daily_returns, daily_weight=daily_weight,
+                                            weight_observation_lag=self.weight_observation_lag,
+                                            transaction_cost=self.transaction_cost, index_fee=self.index_fee,
+                                            initial_value=self.initial_value)
+        # clean results when applicable
         if drop_nan:
             index_result_df.dropna(inplace=True)
         return index_result_df
+
+    def _apply_weight_modifier(self, daily_return_df: pd.DataFrame, daily_weight_df: pd.DataFrame) -> tuple:
+        """
+        The daily return and weight DataFrames are adjusted based upon a specified 'overlay' e.g. volatility target
+        mechanism or beta hedge. In case a list of overlays have been specified, they are applied one after the other
+        :param daily_return_df: pd.DataFrame
+        :param daily_weight_df: pd.DataFrame
+        :return: pd.DataFrame, pd.DataFrame
+        """
+        if self.overlay is None:
+            logger.debug('no overlay is specified')
+            return daily_return_df, daily_weight_df
+        elif isinstance(self.overlay, list):
+            logger.debug('applying a list of {} overlays to the daily returns and weights'.format(len(self.overlay)))
+            # apply each weight overlays
+            for weight_overlay in self.overlay:
+                daily_return_df, daily_weight_df = weight_overlay.get_return_weight_tuple_after_scaling(
+                    multivariate_daily_return_df=daily_return_df,
+                    multivariate_daily_weight_df=daily_weight_df)
+        else:
+            logger.debug('applying an overlay to the daily returns and weights')
+            daily_return_df, daily_weight_df = self.overlay.get_return_weight_tuple_after_scaling(multivariate_daily_return_df=daily_return_df, multivariate_daily_weight_df=daily_weight_df)
+        return daily_return_df, daily_weight_df
 
     def get_index_desc_df(self):
         """
@@ -213,6 +192,8 @@ class Index(Basket):
     def get_signal(self):
         eligibility_df = self._get_eligibility_df()
         if self.signal is None:
+            logger.info('since no signal has been specified, the eligibility DataFrame from the investment universe '
+                        'is used')
             return strategy_signal.Signal(eligibility_df=eligibility_df).get_signal()
         elif isinstance(self.signal, list):
             # calculate the accumulative signal
@@ -228,6 +209,8 @@ class Index(Basket):
         :param eligibility_df:
         :return: pd.DataFrame
         """
+        logger.info('calculate the {} of {} signals'.format(self.signal_accumulation_method.lower(),
+                                                            len(self.signal)))
         # check the aggregator method
         accumulated_signal = None
         if self.signal_accumulation_method is None:
@@ -239,6 +222,7 @@ class Index(Basket):
                 if accumulated_signal is None:
                     accumulated_signal = signal.get_signal()
                 else:
+                    # calculate the element-wise maximum of the signal values
                     accumulated_signal = pd.concat([accumulated_signal, signal.get_signal()]).max(level=0)
         elif self.signal_accumulation_method.lower() == self._eligible_signal_accumulation_methods[1]:
             # take the intersection/product of the signal by updating the eligibility DataFrame for each signal
@@ -247,6 +231,7 @@ class Index(Basket):
                 if accumulated_signal is None:
                     accumulated_signal = signal.get_signal()
                 else:
+                    # calculate the element-wise product of the signal values
                     accumulated_signal *= signal.get_signal().values
         return accumulated_signal
 
@@ -382,6 +367,56 @@ class Index(Basket):
             self._signal_accumulation_method = signal_accumulation_method.lower()
         else:
             raise ValueError("signal_accumulation_method needs to be equal to '%s'" % "' or '".join(self._eligible_signal_accumulation_methods))
+
+
+def index_calculation(daily_returns: pd.DataFrame, daily_weight: pd.DataFrame, weight_observation_lag: int,
+                      transaction_cost: float, index_fee: float, initial_value: float):
+    """
+    Calculates an index as the rolling product sum of the daily returns and weights. Transaction costs are taken on on
+    the absolute value of daily changes in the weights and the index fee p.a. is subtracted from the final result
+    :param daily_returns: pd.DataFrame
+    :param daily_weight: pd.DataFrame
+    :param weight_observation_lag: int
+    :param transaction_cost: float
+    :param index_fee: float (p.a.)
+    :param initial_value: float
+    :return: pd.DataFrame
+    """
+
+    # clean the daily returns
+    daily_returns.fillna(0, inplace=True)
+
+    # calculate the gross return of the index
+    col_name = 'gross_index'
+    gross_instrument_returns = daily_returns * daily_weight.shift(weight_observation_lag).values
+    index_return_df = pd.DataFrame({'gross_return': gross_instrument_returns.sum(axis=1, skipna=False).values},
+                                   index=gross_instrument_returns.index)
+
+    # if applicable, calculate the return net of transaction costs and fees
+    if transaction_cost > 0 or index_fee != 0:
+        # net of transaction costs
+        abs_weight_delta = daily_weight.diff().abs().sum(axis=1)
+        transaction_cost_df = pd.DataFrame({'TC': transaction_cost * abs_weight_delta.values},
+                                           index=abs_weight_delta.index)
+        index_return_df -= transaction_cost_df.values
+
+        # net of index fees
+        dt = [None] + [(index_return_df.index[n] - index_return_df.index[n - 1]).days / 365 for n in
+                       range(1, len(index_return_df.index))]
+        dt_s = pd.Series(data=dt, index=index_return_df.index)
+        index_fee_df = pd.DataFrame({'FEE': index_fee * dt_s.values}, index=dt_s.index)
+        index_return_df -= index_fee_df.values
+        index_return_df.columns = ['net_return']
+        col_name = 'net_index'
+
+    # calculate the index
+    index_result_df = index_return_df.copy()
+    start_of_index_i = index_return_df.index.get_loc(index_return_df.first_valid_index()) - 1
+    index_result_df = (1 + index_result_df).cumprod()  # (1 + r_1) * (1 + r_2) * ...
+    index_result_df.iloc[start_of_index_i, :] = 1.0  # start at 1.0
+    index_result_df *= initial_value  # scale the index by the initial value
+    index_result_df.columns = [col_name]
+    return index_result_df
 
 
 def main():
