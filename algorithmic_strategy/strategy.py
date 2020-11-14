@@ -419,58 +419,5 @@ def index_calculation(daily_returns: pd.DataFrame, daily_weight: pd.DataFrame, w
     return index_result_df
 
 
-def main():
-
-    tickers = ['spy', 'bnd', 'govt', 'vwo']
-    from algorithmic_strategy.investment_universe import InvestmentUniverse
-    from excel_tools import save_df, format_risk_return_analysis_workbook
-    from financial_analysis.finance_tools import return_and_risk_analysis
-    from database.config_database import __BACK_TEST_FOLDER__
-    obs_cal = pd.date_range('2012', '2019', freq='3M')
-    save_back_test = True
-
-    inv_uni = InvestmentUniverse(tickers, observation_calendar=obs_cal)
-    inv_uni.apply_published_close_price_filter(max_number_days_since_publishing=5)
-    perf_signal = strategy_signal.PerformanceRankSignal(60, rank_number=1)
-    low_perf_signal = strategy_signal.PerformanceRankSignal(20, descending=False, rank_number=1)
-    eqw = strategy_weight.EqualWeight()
-
-    vt_overlay = strategy_overlay.VolatilityControl(vol_control_level=0.05, vol_lag=20)
-    beta_overlay = strategy_overlay.BetaHedge('vt', beta_lag=50)
-
-    momentum_index = Index(investment_universe=inv_uni,
-                           signal=[perf_signal, low_perf_signal],
-                           weight=eqw,
-                           weight_observation_lag=2,
-                           transaction_cost=0.001,
-                           index_fee=0.005,
-                           overlay=[beta_overlay, vt_overlay],
-                           signal_accumulation_method='union'
-                           )
-
-    momentum_index.get_weight().to_clipboard()
-
-    performance_data = {'Description': momentum_index.get_index_desc_df()}
-    performance_data.update(
-        return_and_risk_analysis(
-            underlying_price_df=momentum_index.get_back_test(),
-            print_results=True
-        )
-    )
-
-    if save_back_test:
-        file_path = __BACK_TEST_FOLDER__ + '\\TEST2.xlsx'
-        save_df(
-            df_list=list(performance_data.values()),
-            sheet_name_list=list(performance_data.keys()),
-            full_path=file_path
-        )
-
-        format_risk_return_analysis_workbook(file_path)
-
-
-if __name__ == '__main__':
-    main()
-
 
 
