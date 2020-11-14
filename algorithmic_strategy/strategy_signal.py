@@ -341,7 +341,10 @@ class PerformanceRankSignal(_PriceBasedRankSignal):
                          rank_number=rank_number, rank_fraction=rank_fraction, descending=descending, include=include,
                          winsorizing_number=winsorizing_number, winsorizing_fraction=winsorizing_fraction)
         self.performance_observation_period = performance_observation_period
-        self._observation_buffer = max(performance_observation_period) + 10
+        if isinstance(performance_observation_period, int):
+            self._observation_buffer = performance_observation_period + 10
+        else:
+            self._observation_buffer = max(performance_observation_period) + 10
 
     def _get_dataframe_to_be_ranked(self):
         return self._get_columnwise_avg_holding_period_returns()
