@@ -510,7 +510,7 @@ class MeanReversionWeight(_PriceBasedWeight):
         self.std_multiplier = std_multiplier
 
     @staticmethod
-    def _get_diff_array(return_df: pd.DataFrame)->np.array:
+    def _get_diff_array(return_df: pd.DataFrame) -> np.array:
         """
         Returns an array with the pairwise differences in price return for each observation date
         :param return_df: pd.DataFrame
@@ -523,12 +523,15 @@ class MeanReversionWeight(_PriceBasedWeight):
         diff = np.reshape(diff, newshape=(num_tickers ** 2, num_dates)).T
         return diff
 
-    def _get_mean_reversion_indicator(self, return_df: pd.DataFrame):
+    def _get_mean_reversion_indicator(self, return_df: pd.DataFrame) -> np.array:
         """
-
-        :param return_df:
-        :return:
+        when the difference between the return of the ith and jth instrument is lower (higher) than historically, that
+        means that we could expect the ith instrument to increase (decrease) relative to the jth return, hence this is
+        a bullish (bearish) signal for the ith instrument
+        :param return_df: pd.DataFrame
+        :return: np.array
         """
+        # calculate the pairwaise divergence between the return trajectories
         diff = self._get_diff_array(return_df=return_df)
 
         # calculate standard deviation and mean when applicable
@@ -555,6 +558,10 @@ class MeanReversionWeight(_PriceBasedWeight):
                         for i in range(num_tickers)]
         divisor = num_tickers * (num_tickers - 1)
         mean_rev_indi_per_instrument = [np.sum(mean_rev_indi[indices]) / divisor for indices in index_to_sum]
+
+        # display progress
+        self._counter += 1
+        logger.info('progress: {}%...'.format(round(100 * self._counter / self._total, 2)))
         return mean_rev_indi_per_instrument
 
     def _calculate_weight(self) -> pd.DataFrame:
@@ -567,6 +574,8 @@ class MeanReversionWeight(_PriceBasedWeight):
         return_df_list = self._get_price_return_df_list()
 
         # loop through each observation date and calculate the weights
+        self._counter = 0  # used to display progress
+        self._total = len(return_df_list)  # used to display progress
         logger.debug('calculate the mean reversion weights for each return_df')
         mean_reversion_weight_list = [self._get_mean_reversion_indicator(return_df=return_df)
                                       for return_df in return_df_list]
@@ -584,6 +593,17 @@ class MeanReversionWeight(_PriceBasedWeight):
             eligible_tickers = eligible_tickers_list[i]
             mean_reversion_weight_df.loc[obs_date, eligible_tickers] = mean_reversion_weight_list[i]
         return mean_reversion_weight_df
+
+    @property
+    def std_multiplier(self):
+        return self._std_multiplier
+
+    @std_multiplier.setter
+    def std_multiplier(self, std_multiplier: float):
+        if std_multiplier > 0:
+            self._std_multiplier = std_multiplier
+        else:
+            raise ValueError('std_multiplier needs to be greater than 0')
 
 
 class _OptimizedWeight(_PriceBasedWeight):
@@ -636,6 +656,8 @@ class _OptimizedWeight(_PriceBasedWeight):
         # loop through each observation date and use the optimizer to calculate the weights
         prev_eligible_tickers = eligible_tickers_list[0]
         optimized_weight_list = []  # the solved weight arrays are stored here
+        self._counter = 0  # used to display progress
+        self._total = len(return_df_list)  # used to display progress
         for i in range(self.signal_df.shape[0]):
             if use_theoretical_optimizer:
                 # no initial guess is needed when using a theoretical/analytical solution
@@ -658,6 +680,10 @@ class _OptimizedWeight(_PriceBasedWeight):
                     initial_guess=initial_guess
                 )
                 prev_eligible_tickers = new_eligible_tickers
+
+                # display progress
+                self._counter += 1
+                logger.info('progress: {}%...'.format(round(100 * self._counter / self._total, 2)))
             optimized_weight_list.append(optimized_weight)
 
         # reformat result as a DataFrame
