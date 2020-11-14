@@ -128,10 +128,11 @@ def load_df(workbook_name: str = None, folder_path: str = None, full_path: str =
     return data
 
 
-def load_df_from_chosen_excel_file(sheet_name='Sheet1', first_column_index: bool = True):
+def load_df_from_chosen_excel_file(sheet_name='Sheet1', first_column_index: bool = True, initialdir: str = __BASE_FOLDER__,
+                                   title_msg: str = 'Select excel file'):
     # chose excel file to format
     Tk().withdraw()
-    excel_file_path = filedialog.askopenfile(initialdir=__BASE_FOLDER__, title='Select excel file').name
+    excel_file_path = filedialog.askopenfile(initialdir=initialdir, title=title_msg).name
     return load_df(full_path=excel_file_path, sheet_name=sheet_name, first_column_index=first_column_index)
 
 
