@@ -389,7 +389,7 @@ class BloombergConnection:
 
 
 def save_index_membership_df_to_excel():
-    # input paramters
+    # input parameters
     index_name = input("Enter a name of an index (e.g. 'SPX'): ")
     if 'index' not in index_name:
         index_name += ' index'
