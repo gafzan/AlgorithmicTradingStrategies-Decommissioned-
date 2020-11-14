@@ -141,12 +141,12 @@ class _InputWindow(Toplevel):
                     try:
                         fin_db.add_underlying(ticker_sub_list)
                     except ValueError:
-                        logger.warning('One ticker is not available in Yahoo finance.')
+                        logger.warning('One ticker is not available in {}.'.format(data_source))
                         for ticker in ticker_sub_list:
                             try:
                                 fin_db.add_underlying(ticker)
                             except ValueError:
-                                logger.warning('{} does not exist as a ticker on Yahoo Finance.')
+                                logger.warning('{} does not exist as a ticker on {}.'.format(ticker, data_source))
                                 tickers_not_available.append(ticker)
                     counter += 1
                 logger.info('Done with adding underlying(s) to database.')
