@@ -499,10 +499,10 @@ class VolatilityWeight(_PriceBasedProportionalWeight):
 class MeanReversionWeight(_PriceBasedWeight):
     """Class definition of MeanReversionWeight"""
 
-    def __init__(self, signal_df: pd.DataFrame, total_return: bool = False, currency: str = None,
+    def __init__(self, total_return: bool = False, currency: str = None,
                  max_instrument_weight: float = None, min_instrument_weight: float = None, use_mean: bool = False,
                  std_multiplier: float = 1.0, price_obs_freq: {str, int}=None, non_daily_price_obs: bool = False,
-                 observation_window: int = None, clean_data: bool = True):
+                 observation_window: int = None, clean_data: bool = True, signal_df: pd.DataFrame = None):
         super().__init__(signal_df=signal_df, total_return=total_return, currency=currency,
                          price_obs_freq=price_obs_freq, non_daily_price_obs=non_daily_price_obs, observation_window=observation_window,
                          clean_data=clean_data, max_instrument_weight=max_instrument_weight, min_instrument_weight=min_instrument_weight)
