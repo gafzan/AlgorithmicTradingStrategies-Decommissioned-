@@ -927,9 +927,9 @@ class ExcelFeeder(_DataFeeder):
     """Class definition of ExcelFeeder.
     Loads data from an excel file and stores it in the database"""
 
-    def __init__(self, database_name: str, initialdir: str, database_echo=False):
+    def __init__(self, database_name: str, full_path: str = None, database_echo=False):
         super().__init__(database_name, database_echo)
-        self.initialdir = initialdir
+        self.full_path = full_path
         self._eligible_sheet_names = [Underlying.__tablename__]
         self._eligible_sheet_names.extend([data_table.__tablename__ for data_table in self._data_table_list])
         self._eligible_col_names_underlying = ["ticker", "underlying_type", "long_name", "short_name", "sector", "industry", "country", "city", "address", "currency", "description", "website", "exchange"]
@@ -937,17 +937,24 @@ class ExcelFeeder(_DataFeeder):
         self._dataframe_sheet_name_dict.update({Underlying.__tablename__: None})
         self._delete_dates_between_start_end = False
 
-    def chose_excel_file_get_file_name(self)-> str:
+    @staticmethod
+    def chose_excel_file_get_file_name()-> str:
         Tk().withdraw()
-        return filedialog.askopenfile(initialdir=self.initialdir, title='Select excel file containing the underlying.').name
+        file = filedialog.askopenfile(initialdir=__DATABASE_FEED_EXCEL_FILES_FOLDER__,
+                                      title='Select excel file containing the underlying.')
+        if file is None:
+            raise ValueError('file selection failed')
+        else:
+            return file.name
 
     def load_data_from_excel(self):
-        file_path = self.chose_excel_file_get_file_name()
+        if self.full_path is None:
+            self.full_path = self.chose_excel_file_get_file_name()
         sheet_names = list(self._dataframe_sheet_name_dict.keys())
         for sheet_name in sheet_names:  # loop through the eligible sheet names and save the DataFrames
             try:
                 first_column_index = False if sheet_name == 'underlying' else True
-                loaded_df = load_df(full_path=file_path, sheet_name=sheet_name, first_column_index=first_column_index,
+                loaded_df = load_df(full_path=self.full_path, sheet_name=sheet_name, first_column_index=first_column_index,
                                     sheet_name_error_handling=False)
                 loaded_df = self._clean_loaded_dataframe(loaded_df, sheet_name)
                 self._dataframe_sheet_name_dict[sheet_name] = loaded_df
@@ -1246,8 +1253,7 @@ def logger_time_interval_message(start_date: {date, datetime}, end_date: {date, 
 
 
 def add_data_from_excel_main():
-    init_dir = __DATABASE_FEED_EXCEL_FILES_FOLDER__
-    excel_db = ExcelFeeder(__MY_DATABASE_NAME__, init_dir)
+    excel_db = ExcelFeeder(__MY_DATABASE_NAME__)
     excel_db.load_data_from_excel()
     excel_db.insert_data_to_database()
 
