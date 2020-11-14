@@ -35,7 +35,8 @@ from database.config_database import __BACK_TEST_FOLDER__, __TICKER_ELIGIBILITY_
 def get_eligibility_df(full_path: str = None):
     if full_path is None:
         eligibility_df = load_df_from_chosen_excel_file(initialdir=__TICKER_ELIGIBILITY_FOLDER__,
-                                                        title_msg='Select an excel file containing the eligibility data')
+                                                        title_msg='Select an excel file containing the eligibility data',
+                                                        sheet_name='eligibility')
     else:
         eligibility_df = load_df(full_path=full_path)
     return eligibility_df
