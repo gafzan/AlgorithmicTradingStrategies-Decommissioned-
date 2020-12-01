@@ -20,10 +20,11 @@ from dataframe_tools import select_rows_from_dataframe_based_on_sub_calendar
 from database.config_database import __MY_DATABASE_NAME__, __DATABASE_FEED_EXCEL_FILES_FOLDER__
 from excel_tools import load_df
 from database.bloomberg import BloombergConnection
+from financial_analysis import financial_time_series_functions as fin_ts
 
 # Logger
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s : %(module)s : %(funcName)s : %(message)s')
 stream_handler = logging.StreamHandler()
 stream_handler.setFormatter(formatter)
@@ -314,7 +315,8 @@ class FinancialDatabase:
     # methods for OpenPrice, HighPrice, LowPrice, ClosePrice, Volume and Dividend tables
 
     def _get_open_high_low_close_volume_dividend_df(self, table, tickers: {str, list}, start_date: {date, datetime},
-                                                    end_date: {date, datetime}, currency: str)->pd.DataFrame:
+                                                    end_date: {date, datetime}, currency: {str, None}, ffill_na: bool,
+                                                    bfill_na: bool, drop_na: bool)->pd.DataFrame:
         tickers, start_date, end_date = self._input_check_before_getting_ohlc_volume(tickers, start_date, end_date)
         logger.info('Get {} data for {} ticker(s)'.format(table.__tablename__, len(tickers))
                      + logger_time_interval_message(start_date, end_date))
@@ -371,6 +373,17 @@ class FinancialDatabase:
             result_pivoted_df = result_pivoted_df
         # if all columns are nan, remove the entire row
         result_pivoted_df.dropna(inplace=True, how='all')
+
+        # if applicable clean results
+        if ffill_na:
+            result_pivoted_df.fillna(method='ffill', inplace=True)
+
+        if bfill_na:
+            result_pivoted_df.fillna(method='bfill', inplace=True)
+
+        if drop_na:
+            result_pivoted_df.dropna(inplace=True)
+        logger.info('Done with loading {}'.format(value_column_name_dict[table].replace('_', ' ') + 's'))
         return result_pivoted_df
 
     def _input_check_before_getting_ohlc_volume(self, tickers: {str, list}, start_date: {date, datetime}, end_date: {date, datetime}) -> tuple:
@@ -454,48 +467,65 @@ class FinancialDatabase:
         return values_df.mul(fx_quote_for_each_ticker_df)
 
     def get_open_price_df(self, tickers: {str, list}, start_date: {date, datetime}=None, end_date: {date, datetime}=None,
-                          currency: str = None)->pd.DataFrame:
-        return self._get_open_high_low_close_volume_dividend_df(OpenPrice, tickers, start_date, end_date, currency)
+                          currency: str = None, ffill_na: bool = False, bfill_na: bool = False, drop_na: bool = False)->pd.DataFrame:
+        return self._get_open_high_low_close_volume_dividend_df(table=OpenPrice, tickers=tickers, start_date=start_date,
+                                                                end_date=end_date, currency=currency, ffill_na=ffill_na,
+                                                                bfill_na=bfill_na, drop_na=drop_na)
 
     def get_high_price_df(self, tickers: {str, list}, start_date: {date, datetime}=None, end_date: {date, datetime}=None,
-                          currency: str = None)->pd.DataFrame:
-        return self._get_open_high_low_close_volume_dividend_df(HighPrice, tickers, start_date, end_date, currency)
+                          currency: str = None, ffill_na: bool = False, bfill_na: bool = False, drop_na: bool = False)->pd.DataFrame:
+        return self._get_open_high_low_close_volume_dividend_df(table=HighPrice, tickers=tickers, start_date=start_date,
+                                                                end_date=end_date, currency=currency, ffill_na=ffill_na,
+                                                                bfill_na=bfill_na, drop_na=drop_na)
 
     def get_low_price_df(self, tickers: {str, list}, start_date: {date, datetime}=None, end_date: {date, datetime}=None,
-                          currency: str = None)->pd.DataFrame:
-        return self._get_open_high_low_close_volume_dividend_df(LowPrice, tickers, start_date, end_date, currency)
+                          currency: str = None, ffill_na: bool = False, bfill_na: bool = False, drop_na: bool = False)->pd.DataFrame:
+        return self._get_open_high_low_close_volume_dividend_df(table=LowPrice, tickers=tickers, start_date=start_date,
+                                                                end_date=end_date, currency=currency, ffill_na=ffill_na,
+                                                                bfill_na=bfill_na, drop_na=drop_na)
 
     def get_close_price_df(self, tickers: {str, list}, start_date: {date, datetime}=None, end_date: {date, datetime}=None,
-                           currency: str = None)->pd.DataFrame:
-        return self._get_open_high_low_close_volume_dividend_df(ClosePrice, tickers, start_date, end_date, currency)
+                          currency: str = None, ffill_na: bool = False, bfill_na: bool = False, drop_na: bool = False)->pd.DataFrame:
+        return self._get_open_high_low_close_volume_dividend_df(table=ClosePrice, tickers=tickers, start_date=start_date,
+                                                                end_date=end_date, currency=currency, ffill_na=ffill_na,
+                                                                bfill_na=bfill_na, drop_na=drop_na)
 
     def get_volume_df(self, tickers: {str, list}, start_date: {date, datetime}=None, end_date: {date, datetime}=None,
-                          currency: str = None)->pd.DataFrame:
-        return self._get_open_high_low_close_volume_dividend_df(Volume, tickers, start_date, end_date, currency)
+                      ffill_na: bool = False, bfill_na: bool = False, drop_na: bool = False)->pd.DataFrame:
+        return self._get_open_high_low_close_volume_dividend_df(table=Volume, tickers=tickers, start_date=start_date,
+                                                                end_date=end_date, currency=None, ffill_na=ffill_na,
+                                                                bfill_na=bfill_na, drop_na=drop_na)
 
     def get_liquidity_df(self, tickers: {str, list}, start_date: {date, datetime}=None, end_date: {date, datetime}=None,
-                         currency: str = None):
+                         currency: str = None, ffill_na: bool = False, bfill_na: bool = False, drop_na: bool = False):
         logger.info('Get liquidity data' + logger_time_interval_message(start_date, end_date))
-        close_price_df = self.get_close_price_df(tickers, start_date=start_date, end_date=end_date, currency=currency)
-        volume_df = self.get_volume_df(tickers, start_date=start_date, end_date=end_date)
+        close_price_df = self.get_close_price_df(tickers=tickers, start_date=start_date, end_date=end_date, currency=currency,
+                                                 ffill_na=ffill_na, bfill_na=bfill_na, drop_na=drop_na)
+        volume_df = self.get_volume_df(tickers=tickers, start_date=start_date, end_date=end_date, ffill_na=ffill_na,
+                                       bfill_na=bfill_na, drop_na=drop_na)
         volume_df = select_rows_from_dataframe_based_on_sub_calendar(volume_df, close_price_df.index)
         liquidity_df = close_price_df.multiply(volume_df)
         return liquidity_df
 
     def get_dividend_df(self, tickers: {str, list}, start_date: {date, datetime}=None, end_date: {date, datetime}=None,
                         currency: str = None)->pd.DataFrame:
-        return self._get_open_high_low_close_volume_dividend_df(Dividend, tickers, start_date, end_date, currency)
+        return self._get_open_high_low_close_volume_dividend_df(table=Dividend, tickers=tickers, start_date=start_date,
+                                                                end_date=end_date, currency=currency, ffill_na=False,
+                                                                bfill_na=False, drop_na=False)
 
-    def get_total_return_df(self, tickers: {str, list}, start_date: datetime = None, end_date: datetime = None,
-                            withholding_tax: {float} = 0.0, currency: str = None):
+    def get_total_return_close_price_df(self, tickers: {str, list}, start_date: datetime = None, end_date: datetime = None,
+                                        withholding_tax: {float} = 0.0, currency: str = None, ffill_na: bool = False,
+                                        bfill_na: bool = False, drop_na: bool = False):
         logger.info('Get total return data' + logger_time_interval_message(start_date, end_date))
-        dividends = self.get_dividend_df(tickers, start_date=start_date, end_date=end_date)
+        dividends = self.get_dividend_df(tickers=tickers, start_date=start_date, end_date=end_date)
+        close_price_df = self.get_close_price_df(tickers=tickers, start_date=start_date, end_date=end_date, currency=currency,
+                                                 ffill_na=ffill_na, bfill_na=bfill_na, drop_na=drop_na)
         if dividends.empty:
             logger.info('No dividends paid' + logger_time_interval_message(start_date, end_date)
                         + 'Returning close price.')
-            return self.get_close_price_df(tickers, start_date=start_date, end_date=end_date, currency=currency)
+            return close_price_df
         else:
-            close_price_local_ccy = self.get_close_price_df(tickers, start_date=start_date, end_date=end_date)
+            close_price_local_ccy = close_price_df.copy()
             close_price_roll_if_na = close_price_local_ccy.fillna(method='ffill')
             dividend_yield = dividends.divide(close_price_roll_if_na.shift()) * (1.0 - withholding_tax)
             dividend_yield = dividend_yield.loc[close_price_local_ccy.index]  # same index as the price DataFrame
@@ -514,7 +544,6 @@ class FinancialDatabase:
 
     # ------------------------------------------------------------------------------------------------------------------
     # get set functionality and static methods
-
     @staticmethod
     def reformat_tickers(ticker: {str, list}, convert_to_list=False, sort=False) -> {str, list}:
         """Assumes that ticker is either a string or a list and convert_to_list is bool. Returns a string or a list
@@ -785,7 +814,7 @@ class YahooFinanceFeeder(_DataFeeder):
             underlying = Underlying(ticker=ticker_list[counter],
                                     underlying_type=capital_letter_no_blanks(ticker_info.get('quoteType', default_str)),
                                     long_name=capital_letter_no_blanks(ticker_info.get('longName')),
-                                    short_name=capital_letter_no_blanks(ticker_info.get('shortName')),
+                                    short_name=capital_letter_no_blanks(ticker_info.get('shortName', default_str)),
                                     sector=capital_letter_no_blanks(ticker_info.get('sector', default_str)),
                                     industry=capital_letter_no_blanks(ticker_info.get('industry', default_str)),
                                     currency=capital_letter_no_blanks(ticker_info.get('currency', default_str)),
@@ -1240,6 +1269,384 @@ class BloombergFeeder(_DataFeeder):
 
     def __repr__(self):
         return f"<BloombergFeeder(name = {self.database_name})>"
+
+
+class DataGetter:
+    """Class definition of DataGetter"""
+
+    def __init__(self, tickers: list = None, observation_calendar: pd.DatetimeIndex = None, data_observation_window: int=None,
+                 data_observation_frequency: {str, int}=None, data_type: str = 'close', currency: str = None,
+                 clean_data: bool = True, drop_na: bool = False, handle_na: str = 'ffill'):
+        """
+        Used to load data from the database and convert it in a non standard format (list of numpy arrays for each
+        date in the observation calendar). Also includes methods that takes price data and calculates metrics such as
+        realized volatility
+        :param tickers: list containing str or a list of sub-lists containing str
+        :param observation_calendar: pd.DatetimeIndex
+        :param data_observation_window: int or str (name of weekday)
+        :param data_observation_frequency: int
+        :param data_type: str
+        :param currency: str
+        :param clean_data: bool if true, nan are rolled forward
+        :param drop_na: bool if true, for each column, nan is dropped such that the above rows with non nan is shifted
+        down
+        """
+        if clean_data and drop_na:
+            logger.warning('since clean_data is True, setting drop_na to True has no effect since all nan are rolled '
+                           'forward')
+        self._underlying_data = None
+        self._prev_start_date = None  # used to check if data needs to be downloaded
+        self._prev_end_date = None
+        self._weekday_i_dict = {'mon': 0, 'monday': 0, 'tuesday': 1, 'tue': 1, 'wed': 2, 'wednesday': 2, 'thursday': 3,
+                                'thu': 4, 'friday': 5, 'fri': 5}
+        self._available_data_types = ['open', 'high', 'low', 'close', 'total_return', 'volume', 'liquidity']
+        self._fin_db = FinancialDatabase(__MY_DATABASE_NAME__)
+
+        self.tickers = tickers
+        self.observation_calendar = observation_calendar
+        self.observation_window = data_observation_window
+        self.data_observation_frequency = data_observation_frequency  # TODO only str? (int does not make sense anymore...)
+        self._data_type = data_type
+        self._currency = currency
+        self.clean_data = clean_data
+        self.drop_na = drop_na
+        self.handle_na = handle_na
+        self._handle_na_methods = [None, 'skip', 'drop', 'ffill']  # TODO comment
+
+    def get_underlying_df(self, return_lag: int = None):
+        """
+        Return a DataFrame with the underlying data adjusted for frequency, dropping or forward filling nan
+        :param return_lag: int
+        :return: DataFrame
+        """
+        # download data if necessary
+        if self._data_needs_updating():
+            self._download_underlying_data()
+
+        # retrieve the data for the relevant tickers
+        underlying_df = self._underlying_data[self.tickers].copy()
+
+        # adjust the observation frequency
+        underlying_df = self._adjust_underlying_data_frequency(underlying_df=underlying_df)
+
+        # clean the data when applicable
+        if self.handle_na == 'drop':
+            underlying_df.dropna(inplace=True)
+        elif self.handle_na == 'ffill':
+            underlying_df.fillna(method='ffill')
+
+        # format change
+        if return_lag:
+            if return_lag >= 1:
+                nan_or_1 = underlying_df[~underlying_df.isnull()] = 1  # set all non NaN to 1
+                underlying_df = underlying_df.fillna(method='ffill').pct_change(return_lag, fill_method=None)
+                underlying_df *= nan_or_1
+            else:
+                raise ValueError('return_lag needs to be an int larger or equal to 1')
+        return underlying_df
+
+    def get_holding_period_return(self, ending_lag: int = 0, ffill_values: bool = False):
+        """
+        Calculate the rolling holding period return for each column
+        Holding period return for stock = Price(t - ending_lag) / Price(t - observation_window) - 1
+        :param ending_lag: int
+        :param ffill_values: bool if True, replace nan with the previous available non-nan financial time series value
+        :return: DataFrame
+        """
+        self._price_data_method_logger_msg()
+        underlying_df = self.get_underlying_df()
+        performance_df = fin_ts.holding_period_return(multivariate_df=underlying_df, lag=self.observation_window,
+                                                      ending_lag=ending_lag, skip_nan=self.handle_na == 'skip')
+        return self._adjust_financial_time_series_result(multivariate_df=performance_df, ffill_values=ffill_values)
+
+    def get_volatility(self, return_lag: int = 1, ffill_values: bool = False):
+        """
+        Returns a DataFrame with realized volatility for each observation date
+        :param return_lag: int
+        :param ffill_values: bool if True, replace nan with the previous available non-nan financial time series value
+        :return: DataFrame
+        """
+        self._price_data_method_logger_msg()
+        underlying_df = self.get_underlying_df()
+        vol_df = fin_ts.realized_volatility(multivariate_df=underlying_df, return_lag=return_lag, skip_nan=self.handle_na == 'skip',
+                                            window=self.observation_window, annualization_factor=self.get_annualization_factor())
+        return self._adjust_financial_time_series_result(multivariate_df=vol_df, ffill_values=ffill_values)
+
+    def get_beta(self, beta_instrument_name: str,  return_lag: int = 1, ffill_values: bool = False):
+        """
+        Returns a DataFrame with beta with respect to the given instrument for each observation date
+        :param beta_instrument_name: str name of the column to calculate beta against
+        :param return_lag: int
+        :param ffill_values: bool if True, replace nan with the previous available non-nan financial time series value
+        :return: DataFrame
+        """
+        self._price_data_method_logger_msg()
+        underlying_df = self.get_underlying_df()
+        beta_df = fin_ts.realized_beta(multivariate_df=underlying_df, beta_instrument_name=beta_instrument_name,
+                                       return_lag=return_lag, skip_nan=self.handle_na == 'skip', window=self.observation_window)
+        return self._adjust_financial_time_series_result(multivariate_df=beta_df, ffill_values=ffill_values)
+
+    def _adjust_financial_time_series_result(self, multivariate_df: pd.DataFrame, ffill_values: bool):
+        """
+        Replace nan with the previous non-nan data if applicable and lookup the data for the specific observation
+        calendar
+        :param multivariate_df: DataFrame
+        :param ffill_values: bool
+        :return: DataFrame
+        """
+        if ffill_values:
+            # roll forward the last non-nan values
+            multivariate_df.fillna(method='ffill', inplace=True)
+
+        # observe the financial time series data on the observation dates (lookup the latest available value in case the
+        # observation date does not exists
+        original_calendar = multivariate_df.index  # calendar for the financial time series data
+        adj_obs_date_index_list = [original_calendar.get_loc(obs_date, method='ffill')
+                                   for obs_date in self.observation_calendar if obs_date >= min(original_calendar)]
+        # lookup the data
+        data_for_adj_obs_date = multivariate_df.to_numpy()[adj_obs_date_index_list, :]  # more efficient(?) to do lookup with numpy array
+
+        # in case the observation dates are before the first available date in the database, add nans to the first rows
+        if len(adj_obs_date_index_list) != len(self.observation_calendar):  # not enough dates in the financial database
+            # add nan for observation dates where no data exists in the financial database
+            num_missing_rows = len(self.observation_calendar) - len(adj_obs_date_index_list)
+            nan_array = np.empty((num_missing_rows, data_for_adj_obs_date.shape[1]))
+            nan_array[:] = np.NaN
+            # 'stack' the data on top of rows with nan
+            data_for_adj_obs_date = np.vstack([nan_array, data_for_adj_obs_date])
+        return pd.DataFrame(data=data_for_adj_obs_date, index=self.observation_calendar,
+                            columns=multivariate_df.columns)
+
+    def get_annualization_factor(self) -> float:
+        """
+        Calculate an annualization factor as the ratio of 252 and the observation frequency
+        :return: float
+        """
+        if isinstance(self.data_observation_frequency, str):
+            annualization_factor = 252 / 5
+        elif self.data_observation_frequency is None:
+            annualization_factor = 252
+        else:
+            annualization_factor = 252 / self.data_observation_frequency
+        return annualization_factor
+
+    def _adjust_underlying_data_frequency(self, underlying_df: pd.DataFrame):
+        # observe weekly data based on the data_observation_frequency str variable
+        if isinstance(self.data_observation_frequency, str):
+            underlying_df = underlying_df[self._underlying_data.index.weekday
+                                            == self._weekday_i_dict[self.data_observation_frequency]]
+        elif isinstance(self.data_observation_frequency, int):
+            # sort index in descending order. this is done to have the count start from the latest observation date
+            underlying_df = underlying_df.sort_index(ascending=False).iloc[::self.data_observation_frequency, :].sort_index()
+        else:
+            pass
+        return underlying_df
+
+    def _download_underlying_data(self):
+        """
+        Downloads the data based on the specific attributes and stores it
+        :return: None
+        """
+        self._check_parameters()
+        ffill = self.clean_data
+        start_date = self._get_start_date()
+        end_date = self._get_end_date()
+
+        # load the data from the database on the specific data type e.g. 'close'
+        if self.data_type == self._available_data_types[0]:
+            self._underlying_data = self._fin_db.get_open_price_df(tickers=self.tickers,
+                                                                   start_date=start_date,
+                                                                   end_date=end_date,
+                                                                   currency=self.currency,
+                                                                   ffill_na=ffill)
+        elif self.data_type == self._available_data_types[1]:
+            self._underlying_data = self._fin_db.get_high_price_df(tickers=self.tickers,
+                                                                   start_date=start_date,
+                                                                   end_date=end_date,
+                                                                   currency=self.currency,
+                                                                   ffill_na=ffill)
+        elif self.data_type == self._available_data_types[2]:
+            self._underlying_data = self._fin_db.get_low_price_df(tickers=self.tickers,
+                                                                  start_date=start_date,
+                                                                  end_date=end_date,
+                                                                  currency=self.currency,
+                                                                  ffill_na=ffill)
+        elif self.data_type == self._available_data_types[3]:
+            self._underlying_data = self._fin_db.get_close_price_df(tickers=self.tickers,
+                                                                    start_date=start_date,
+                                                                    end_date=end_date,
+                                                                    currency=self.currency,
+                                                                    ffill_na=ffill)
+        elif self.data_type == self._available_data_types[4]:
+            self._underlying_data = self._fin_db.get_total_return_close_price_df(tickers=self.tickers,
+                                                                                 start_date=start_date,
+                                                                                 end_date=end_date,
+                                                                                 currency=self.currency,
+                                                                                 ffill_na=ffill)
+        elif self.data_type == self._available_data_types[5]:
+            self._underlying_data = self._fin_db.get_volume_df(tickers=self.tickers,
+                                                               start_date=start_date,
+                                                               end_date=end_date,
+                                                               ffill_na=ffill)
+
+        elif self.data_type == self._available_data_types[6]:
+            self._underlying_data = self._fin_db.get_liquidity_df(tickers=self.tickers,
+                                                                  start_date=start_date,
+                                                                  end_date=end_date,
+                                                                  currency=self.currency,
+                                                                  ffill_na=ffill)
+        else:
+            raise ValueError("data type '{}' not recognized".format(self.data_type.lower()))
+
+        # save the start and end dates
+        if start_date is None:
+            self._prev_start_date = self._underlying_data.index[-1]  # set to the oldest date when data is available
+        else:
+            self._prev_start_date = start_date
+        self._prev_end_date = end_date
+
+        if end_date > self._underlying_data.index[-1]:
+            logger.warning("there is no '{}' data between {} and {}".format(self.data_type,
+                                                                            str(self._underlying_data.index[-1])[:10],
+                                                                            str(end_date)[:10]))
+
+    def _data_needs_updating(self) -> bool:
+        """
+        Returns True if one of the following is true: 1) first time loading data 2) tickers are missing 3) dates are
+        missing, else False
+        :return: bool
+        """
+        if self._underlying_data is None:
+            # first time loading data
+            return True
+        elif len(set(list(self._underlying_data)).difference(self.tickers)) == 0 and self._underlying_data.shape[1] != len(self.tickers):
+            # some tickers are not available in the old underlying data
+            return True
+        elif self._dates_not_available():
+            return True
+        else:
+            return False
+
+    def _check_parameters(self):
+        """
+        Raises an error in case something is incorrect with the setup before getting the data
+        :return: None
+        """
+        if self.tickers is None:
+            raise ValueError('tickers have not been specified')
+        elif self.observation_calendar is None:
+            raise ValueError('observation_calendar has not been specified')
+        elif isinstance(self.tickers[0], list) and len(self.tickers) != len(self.observation_calendar):
+            raise ValueError('number of sub-lists with tickers ({}) needs to be the same as the number of observation dates ({})'.format(len(self.tickers), len(self.observation_calendar)))
+        else:
+            return
+
+    def _dates_not_available(self):
+        """
+        Returns True is the dates are not up to date
+        :return: bool
+        """
+        start_date = self._get_start_date()
+        if self._prev_start_date is None:  # last time data was loaded without a start date
+            return self._get_end_date() > self._prev_end_date
+        elif start_date is None:
+            return True
+        else:
+            return start_date < self._prev_start_date
+
+    def _get_start_date(self):
+        """
+        Returns the start date taking into account a buffer
+        :return: datetime, None
+        """
+        if self.observation_window is None:
+            return None
+        else:
+            start_date = min(self.observation_calendar)
+            day_buffer = 15  # add a three week buffer
+            biz_day_shift = self.observation_window + day_buffer
+            if isinstance(self.data_observation_frequency, str):
+                biz_day_shift *= 5  # assuming weekly frequency
+            elif isinstance(self.data_observation_frequency, int):
+                biz_day_shift *= self.data_observation_frequency
+            return start_date - BDay(int(biz_day_shift))
+
+    def _get_end_date(self):
+        """
+        Returns the end i.e. the last available date in the observation calendar
+        :return: datetime
+        """
+        return max(self.observation_calendar)
+
+    def _price_data_method_logger_msg(self):
+        if self.data_type not in self._available_data_types[:5]:
+            logger.warning("this method is normally used using price data such as: '%s'" % ", ".join(self._available_data_types[:5]))
+
+    # ------------------------------------------------------------------------------------------------------------------
+    # get and setter methods
+    @property
+    def tickers(self):
+        return self._tickers
+
+    @tickers.setter
+    def tickers(self, tickers: list):
+        # ticker can either be 1) a list of str 2) a list of sub-lists with str
+        if tickers is None:
+            self._tickers = tickers
+        else:
+            try:
+                self._tickers = [e.upper() for e in tickers]
+            except AttributeError:
+                raise ValueError('tickers must be specified as a list or as a list of sub lists with strings')
+
+    @property
+    def data_observation_frequency(self):
+        return self._data_observation_frequency
+
+    @data_observation_frequency.setter
+    def data_observation_frequency(self, data_observation_frequency: {int, str}):
+        if isinstance(data_observation_frequency, str) and data_observation_frequency.lower() in self._weekday_i_dict.keys():
+            self._data_observation_frequency = data_observation_frequency
+        elif data_observation_frequency is None or data_observation_frequency > 0:
+            self._data_observation_frequency = data_observation_frequency
+        else:
+            raise ValueError("data_observation_frequency needs to be an int larger than 0 or a str equal to '%s'" % "' or '".join(self._weekday_i_dict.keys()))
+
+    @property
+    def observation_window(self):
+        return self._observation_window
+
+    @observation_window.setter
+    def observation_window(self, observation_window: {int, None}):
+        if observation_window is None or observation_window > 0:
+            self._observation_window = observation_window
+        else:
+            raise ValueError('observation_window needs to be an int strictly greater than 0 or None')
+
+    @property
+    def data_type(self):
+        return self._data_type
+
+    @data_type.setter
+    def data_type(self, data_type: str):
+        if data_type.lower() in self._available_data_types:
+            if data_type.lower() != self._data_type:
+                # reset the underlying DataFrame if the data type has changed
+                self._underlying_data = None
+            self._data_type = data_type.lower()
+        else:
+            raise ValueError("data_type needs to be equal to '%s'" % "' or '".join(self._available_data_types))
+
+    @property
+    def currency(self):
+        return self._currency
+
+    @currency.setter
+    def currency(self, currency: str):
+        if currency != self._currency:
+            # reset the underlying DataFrame if the currency has changed
+            self._underlying_data = None
+        self._currency = currency
 
 
 def logger_time_interval_message(start_date: {date, datetime}, end_date: {date, datetime}) -> str:
