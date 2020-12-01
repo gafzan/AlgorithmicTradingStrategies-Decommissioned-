@@ -167,14 +167,24 @@ def _general_dataframe_function(multivariate_df: pd.DataFrame, func, return_lag:
     if skip_nan:
         # initialize a DataFrame used to store the result
         total_result = pd.DataFrame(index=multivariate_df.index)
+        dirty_df = multivariate_df.copy()
 
-        # TODO find the tickers that only has non-nan or starts with some nan and afterwards only has non-nan values
-        clean_tickers = []
-        dirty_tickers = []
+        # (Alternatively) -> no improvement in speed though...
+        # only use column-wise nan skip for the 'dirty' DataFrame
+        # ffill_df = multivariate_df.where(multivariate_df.ffill().notna(), 0)  # fwd fill all first occurrences of nan
+        # clean_df = multivariate_df[ffill_df.columns[~ffill_df.isnull().any()]]  # has columns without any nan or only nan at the start
+        # dirty_df = multivariate_df.drop(list(clean_df), axis=1)
+        # calculate the function using the clean Dataframe and join the result
+        # total_result = total_result.join(
+        #     func(
+        #         clean_df,
+        #         func_param
+        #     )
+        # )
 
         # loop through columns, remove nans, calculate returns (if applicable), apply the function and join the result
-        for col_name in list(multivariate_df):
-            clean_series = multivariate_df[col_name].dropna()
+        for col_name in list(dirty_df):
+            clean_series = dirty_df[col_name].dropna()
             if return_lag:
                 clean_series = clean_series.pct_change(return_lag, fill_method=None)
             # apply the function and join series to the result
@@ -184,32 +194,12 @@ def _general_dataframe_function(multivariate_df: pd.DataFrame, func, return_lag:
                     func_param
                 )
             )
+
         return total_result
     else:
         if return_lag:
             multivariate_df = multivariate_df.pct_change(return_lag, fill_method=None)
         return func(multivariate_df, func_param)
-
-
-def main():
-    from excel_tools import load_df
-    close_df = load_df(full_path=r'C:\Users\gafza\PycharmProjects\AlgorithmicTradingStrategies\excel_data\data_requests\raw_etf_close_30_nov_2020.xlsx',
-                       sheet_name='close_price')
-    # close_df = close_df[list(close_df)[:2]]
-    # close_df.fillna(method='ffill', inplace=True)
-
-
-    print('Calculate stat ...')
-    stat = holding_period_return(multivariate_df=close_df, lag=100, skip_nan=True, ending_lag=20)
-
-    print(stat)
-    stat.to_clipboard()
-
-
-if __name__ == '__main__':
-    main()
-
-
 
 
 
