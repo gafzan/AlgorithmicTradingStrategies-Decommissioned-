@@ -2,6 +2,7 @@
 general_tools.py
 """
 from itertools import zip_longest
+from operator import itemgetter
 
 # ______________________________________________________________________________________________________________________
 # Handling lists and dictionaries
@@ -32,6 +33,28 @@ def reverse_dict(dict_: dict) -> dict:
     old dictionary: {keys: values}
     new dictionary: {values: keys}"""
     return {value: key for key, value in dict_.items()}
+
+
+def check_required_keys(required_keys: list, dictionary: dict):
+    """
+    Raises an error if any of the elements in the given list does not exists as a key in the given dictionary
+    :param required_keys: list
+    :param dictionary: dict
+    :return: None
+    """
+    if any(req_key not in dictionary.keys() for req_key in required_keys):
+        raise ValueError("'%s' are not specified" % "', '".join(set(required_keys).difference(dictionary.keys())))
+    return
+
+
+def get_values_from_key_list(dictionary: dict, key_list: list):
+    """
+    Returns a list of values based on each key in the given list
+    :param dictionary: dict
+    :param key_list: list of keys
+    :return:
+    """
+    return list(itemgetter(key_list)(*dictionary))
 
 # ______________________________________________________________________________________________________________________
 # Handling strings
@@ -111,3 +134,21 @@ def user_picks_element_from_list(list_: list):
             pass
     return list_[list_index - 1]
 
+
+def ask_user_yes_or_no(question: str)->bool:
+    """
+    Asks a question to user and user needs to say 'yes' or 'no' (several versions are accepted)
+    :param question: str
+    :return: bool
+    """
+    accpetable_yes = ['sure', 'yeah', 'yes', 'y']
+    accpetable_no = ['no', 'n', 'nope']
+
+    while True:
+        answer = input(question + '\nYes or No?: ').lower()
+        if answer in accpetable_yes:
+            return True
+        elif answer in accpetable_no:
+            return False
+        else:
+            print("'{}' is not an acceptable answer...\n".format(answer))
