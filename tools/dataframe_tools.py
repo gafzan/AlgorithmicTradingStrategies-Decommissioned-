@@ -18,7 +18,7 @@ def nan_before_dates(df: pd.DataFrame, col_name_date_dict: dict):
     if any(key not in list(df) for key in col_name_date_dict.keys()):
         raise ValueError("all keys in 'col_name_date_dict' needs to be in the column names of 'df'")
 
-    rows = np.searchsorted(df.index, list(col_name_date_dict.values()), side='right')
+    rows = np.searchsorted(df.index.date, list(col_name_date_dict.values()), side='right')
     cols = [list(df).index(key) for key in col_name_date_dict.keys()]
 
     # set all rows before a certain row to a 'flag number' that will later be replaced by nan

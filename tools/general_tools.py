@@ -3,6 +3,7 @@ general_tools.py
 """
 from itertools import zip_longest
 from operator import itemgetter
+from datetime import date
 
 # ______________________________________________________________________________________________________________________
 # Handling lists and dictionaries
@@ -56,9 +57,32 @@ def get_values_from_key_list(dictionary: dict, key_list: list):
     """
     return list(itemgetter(key_list)(*dictionary))
 
+
+def translate_value_key_dict(dictionary: dict, new_old_key_map: dict, old_new_value_per_old_key_map: dict):
+    """
+    Adjust the keys and values of the given dictionary according to the specified mappers
+    :param dictionary: dict
+    :param new_old_key_map: dict {new key: old key}
+    :param old_new_value_per_old_key_map: dict {old key: {old value: new value}}
+    :return: dict
+    """
+    # find the keys where the corresponding value needs to change and
+    value_adj_keys = [key for key in old_new_value_per_old_key_map.keys() if key in dictionary.keys()]
+    # change each value according to the mapper
+    for value_adj_key in value_adj_keys:
+        dictionary.update(
+            {
+                value_adj_key: old_new_value_per_old_key_map[value_adj_key].get(
+                    dictionary[value_adj_key],
+                    dictionary[value_adj_key]
+                )
+            }
+        )
+    # change each key according to the mapper
+    return dictionary
+
 # ______________________________________________________________________________________________________________________
 # Handling strings
-
 
 def string_is_number(s: str) -> bool:
     """Assumes s is a string. Returns boolean. If the string can be converted to a number then True, else false."""
@@ -152,3 +176,14 @@ def ask_user_yes_or_no(question: str)->bool:
             return False
         else:
             print("'{}' is not an acceptable answer...\n".format(answer))
+
+
+def time_period_logger_msg(start_date: {date, None}, end_date: {date, None}):
+    """
+    Returns a string to be used in a logger message telling us about the time eriod we are looking at
+    :param start_date: date, None
+    :param end_date: date, None
+    :return: str
+    """
+    return '' if start_date is None else ' from {}'.format(start_date) + '' if end_date is None else ' up to {}'.format(end_date)
+
